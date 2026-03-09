@@ -7,6 +7,7 @@ import re
 import html as _html
 import io
 import contextlib
+import subprocess
 import traceback
 from pathlib import Path
 from typing import Callable, List, Optional
@@ -472,9 +473,14 @@ def _resolve_base_dir() -> Path:
     if env:
         return Path(env).expanduser().resolve()
     try:
-        return Path(__file__).resolve().parent
+        p = Path(__file__).resolve().parent
     except NameError:
-        return Path(sys.argv[0]).resolve().parent if sys.argv and sys.argv[0] else Path.cwd()
+        p = Path(sys.argv[0]).resolve().parent if sys.argv and sys.argv[0] else Path.cwd()
+    # When running from source inside a 'Data' subdirectory, go up to the project root
+    # so that <base>/Data/_bvl_pdfs resolves correctly in both dev and frozen scenarios.
+    if p.name.lower() == "data":
+        return p.parent
+    return p
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -676,14 +682,18 @@ class UpdaterToastQt(QWidget):
             self.lblStatus.setText("Bitte Log prüfen. Fenster bleibt offen.")
 
     def _open_log(self):
+        path = str(self.log_path)
         try:
-            path = str(self.log_path)
             if sys.platform.startswith("darwin"):
-                os.system(f"open '{path}'")
+                subprocess.Popen(["open", path])
             elif os.name == "nt":
-                os.startfile(path)
+                try:
+                    os.startfile(path)  # type: ignore[attr-defined]
+                except OSError as e:
+                    from PySide6.QtWidgets import QMessageBox
+                    QMessageBox.warning(None, "Log öffnen", f"Konnte Log nicht öffnen:\n{e}")
             else:
-                os.system(f"xdg-open '{path}'")
+                subprocess.Popen(["xdg-open", path])
         except Exception:
             pass
 

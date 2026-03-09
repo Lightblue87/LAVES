@@ -568,7 +568,12 @@ class EinzelpruefungWidget(QWidget):
         self.cbo_species.blockSignals(False)
 
     def _set_out(self, text: str, ok: Optional[bool] = None):
-        color = "#2e7d32" if ok else "#f9a825"
+        if ok is True:
+            color = "#2e7d32"   # green  – value within limits
+        elif ok is False:
+            color = "#c62828"   # red    – value out of limits
+        else:
+            color = "#f9a825"   # yellow – warning (no data, ambiguous, …)
         lines = text.splitlines()
         if lines:
             lines[0] = f'<b><span style="color:{color}">{lines[0]}</span></b>'
@@ -742,12 +747,12 @@ class EinzelpruefungWidget(QWidget):
                 f"⚠ Für die Tierart „{sp}“ existiert kein Eintrag für {e}."
                 f"<br>Grenzwerte liegen vor für: {species_txt}"
             )
-            self._set_out(hint, ok=False)
+            self._set_out(hint, ok=None)
             return
 
         if len(recs) > 1:
             msg = "<br>".join([f"{r.e_number} {r.substance or ''} → {format_range(r)}" for r in recs])
-            self._set_out("Mehrdeutig – bitte genauer eingrenzen.<br>" + msg, ok=False)
+            self._set_out("Mehrdeutig – bitte genauer eingrenzen.<br>" + msg, ok=None)
             return
 
         ok, lines = evaluate_single_value(val, recs[0])
@@ -1143,25 +1148,36 @@ class KombiPruefungWidget(QWidget):
     def export_pdf(self):
         if not self.out.toPlainText().strip():
             return
-        from reportlab.lib.pagesizes import A4
-        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+        try:
+            from reportlab.lib.pagesizes import A4
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+        except ImportError:
+            QMessageBox.warning(
+                self, "Fehlende Bibliothek",
+                "Das Paket 'reportlab' ist nicht installiert.\n"
+                "Bitte installieren Sie es mit:\n\n  pip install reportlab"
+            )
+            return
         path, _ = QFileDialog.getSaveFileName(self, "Bericht speichern", "Auswertung.pdf", "PDF Dateien (*.pdf)")
         if not path:
             return
-        doc = SimpleDocTemplate(path, pagesize=A4, leftMargin=40, rightMargin=40, topMargin=60, bottomMargin=40)
-        styles = getSampleStyleSheet()
-        title = ParagraphStyle("title", parent=styles["Heading1"], alignment=1)
-        small = ParagraphStyle("small", parent=styles["Normal"], fontSize=9)
-        elems = [
-            Paragraph("Laborauswertung Futtermittel-Zusatzstoffe (EG 1831/2003)", title),
-            Spacer(1, 10),
-            Paragraph(f"Tierart: {self.cbo_species.currentText()}  |  Alter: {self.cbo_age.currentText()}  |  Feed-Typ: {self.cbo_feed.currentText()}", small),
-            Spacer(1, 10),
-            Paragraph(self.out.toHtml(), small)
-        ]
-        doc.build(elems)
-        QMessageBox.information(self, "Export", f"PDF gespeichert:\n{path}")
+        try:
+            doc = SimpleDocTemplate(path, pagesize=A4, leftMargin=40, rightMargin=40, topMargin=60, bottomMargin=40)
+            styles = getSampleStyleSheet()
+            title = ParagraphStyle("title", parent=styles["Heading1"], alignment=1)
+            small = ParagraphStyle("small", parent=styles["Normal"], fontSize=9)
+            elems = [
+                Paragraph("Laborauswertung Futtermittel-Zusatzstoffe (EG 1831/2003)", title),
+                Spacer(1, 10),
+                Paragraph(f"Tierart: {self.cbo_species.currentText()}  |  Alter: {self.cbo_age.currentText()}  |  Feed-Typ: {self.cbo_feed.currentText()}", small),
+                Spacer(1, 10),
+                Paragraph(self.out.toHtml(), small)
+            ]
+            doc.build(elems)
+            QMessageBox.information(self, "Export", f"PDF gespeichert:\n{path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Export fehlgeschlagen", f"Fehler beim Erstellen der PDF:\n{e}")
 
 # =========================================================
 # Hauptfenster mit Empty-View & Auto-Reload
@@ -1239,24 +1255,34 @@ class MainWindow(QMainWindow):
             tabs.addTab(empty_widget, "Keine Daten geladen")
 
     def _open_updater(self):
+        # Try compiled executable first (Windows deployment), then fall back to Python script
         toast_exe = os.path.join(self.base_dir, "Data", "laves_toast_qt.exe")
+        toast_py  = os.path.join(self.base_dir, "Data", "laves_toast_qt.py")
 
-        if not os.path.isfile(toast_exe):
+        if os.path.isfile(toast_exe):
+            program   = toast_exe
+            arguments: List[str] = []
+        elif os.path.isfile(toast_py):
+            program   = sys.executable
+            arguments = [toast_py]
+        else:
             QMessageBox.critical(
                 self, "Updater nicht gefunden",
                 f"Datei nicht gefunden:\n{toast_exe}\n\n"
-                "Bitte prüfen Sie, ob 'laves_toast_qt.exe' im Ordner 'Data' liegt."
+                "Bitte prüfen Sie, ob 'laves_toast_qt.exe' oder 'laves_toast_qt.py' "
+                "im Ordner 'Data' liegt."
             )
             return
 
         self._toast_proc = QProcess(self)
-        self._toast_proc.setProgram(toast_exe)
+        self._toast_proc.setProgram(program)
+        self._toast_proc.setArguments(arguments)
 
+        # Use start() (not startDetached()) so the finished signal fires and
+        # reload_data() is called when the updater window closes.
         self._toast_proc.finished.connect(self._on_toast_finished)
         self._toast_proc.errorOccurred.connect(self._on_toast_error)
-
-        if not self._toast_proc.startDetached():
-            QMessageBox.warning(self, "Startfehler", "Konnte den Updater nicht starten.")
+        self._toast_proc.start()
 
     def _on_toast_error(self, error):
         QMessageBox.warning(

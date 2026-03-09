@@ -30,6 +30,11 @@ try:
 except NameError:
     BASE_DIR = Path.cwd()
 
+# When running from source inside a 'Data' subdirectory, go up to the project root
+# so that DATA_DIR resolves correctly in both dev and frozen-executable scenarios.
+if BASE_DIR.name.lower() == "data":
+    BASE_DIR = BASE_DIR.parent
+
 DATA_DIR = BASE_DIR / "Data"
 PDF_DIR  = DATA_DIR / "_bvl_pdfs"
 OUT_JSON = DATA_DIR / "zusatzstoffe.json"
@@ -1199,16 +1204,17 @@ def check_quality(data: List[Dict[str, Any]]) -> None:
     ok_max  = sum(1 for r in data if r["max_mg_kg"])
     ok_gel  = sum(1 for r in data if r["geltung_bis"])
     ok_cat  = sum(1 for r in data if r.get("tierart_kategorie"))
-    ok_spez = sum(1 for r in data if r.get("tierart_kategorie"))
+    ok_spez = sum(1 for r in data if r.get("tierart_spezifisch"))
     empty_names = [r for r in data if not r["name"]]
 
     print(f"\n{'='*60}")
     print(f"Qualität: {total} Records gesamt")
-    print(f"  Name vorhanden:    {ok_name}/{total}  ({100*ok_name//total}%)")
-    print(f"  Tierart vorhanden: {ok_tier}/{total}  ({100*ok_tier//total}%)")
-    print(f"  Max vorhanden:     {ok_max}/{total}   ({100*ok_max//total}%)")
-    print(f"  Geltung vorhanden: {ok_gel}/{total}  ({100*ok_gel//total}%)")
-    print(f"  Kategorie vorhanden: {ok_cat}/{total}  ({100*ok_cat//total}%)")
+    print(f"  Name vorhanden:          {ok_name}/{total}  ({100*ok_name//total}%)")
+    print(f"  Tierart vorhanden:       {ok_tier}/{total}  ({100*ok_tier//total}%)")
+    print(f"  Max vorhanden:           {ok_max}/{total}   ({100*ok_max//total}%)")
+    print(f"  Geltung vorhanden:       {ok_gel}/{total}  ({100*ok_gel//total}%)")
+    print(f"  Kategorie vorhanden:     {ok_cat}/{total}  ({100*ok_cat//total}%)")
+    print(f"  Artspezifisch:           {ok_spez}/{total}  ({100*ok_spez//total}%)")
 
     # Kategorie-Verteilung
     categories = {}
@@ -1233,10 +1239,6 @@ def check_quality(data: List[Dict[str, Any]]) -> None:
 
 def main(pdf_dir: Path = PDF_DIR) -> None:
     pdfs = sorted(pdf_dir.glob("*.pdf"))
-    if not pdfs:
-        # Fallback: nur die hochgeladenen PDFs verarbeiten
-        upload_dir = Path("/mnt/user-data/uploads")
-        pdfs = sorted(upload_dir.glob("*.pdf"))
 
     if not pdfs:
         print("Keine PDFs gefunden.")
