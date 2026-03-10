@@ -16,3 +16,5 @@ env/
 # User data generated at runtime (not source)
 Data/_bvl_pdfs/
 Data/update.log
+Data/laves_evaluation.log
+Data/validation_report.txt
