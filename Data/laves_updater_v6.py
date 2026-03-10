@@ -26,14 +26,22 @@ from pdfminer.layout import LAParams, LTTextBox, LTTextLine
 # Pfade
 # ─────────────────────────────────────────────────────────────────────────────
 try:
-    BASE_DIR = Path(__file__).resolve().parent
+    _here = Path(__file__).resolve().parent
 except NameError:
-    BASE_DIR = Path.cwd()
+    _here = Path(sys.argv[0]).resolve().parent if sys.argv and sys.argv[0] else Path.cwd()
 
-# When running from source inside a 'Data' subdirectory, go up to the project root
-# so that DATA_DIR resolves correctly in both dev and frozen-executable scenarios.
-if BASE_DIR.name.lower() == "data":
-    BASE_DIR = BASE_DIR.parent
+if getattr(sys, "frozen", False):
+    # When bundled inside laves_toast_qt.exe, sys.executable points to that exe.
+    # Use its parent directory so OUT_JSON is written to a persistent location
+    # alongside the executable rather than to a temporary _MEIPASS directory.
+    BASE_DIR = Path(sys.executable).resolve().parent
+    if BASE_DIR.name.lower() == "data":
+        BASE_DIR = BASE_DIR.parent
+elif _here.name.lower() == "data":
+    # Running from source inside the Data/ subdirectory → escape to project root.
+    BASE_DIR = _here.parent
+else:
+    BASE_DIR = _here
 
 DATA_DIR = BASE_DIR / "Data"
 PDF_DIR  = DATA_DIR / "_bvl_pdfs"
@@ -1199,6 +1207,9 @@ def categorize_records(data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 def check_quality(data: List[Dict[str, Any]]) -> None:
     total   = len(data)
+    if total == 0:
+        print("Qualität: 0 Records – nichts zu prüfen.")
+        return
     ok_name = sum(1 for r in data if r["name"])
     ok_tier = sum(1 for r in data if r["tierarten"])
     ok_max  = sum(1 for r in data if r["max_mg_kg"])

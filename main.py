@@ -1381,6 +1381,13 @@ def main():
     apply_modern_theme(app)
 
     if getattr(sys, "frozen", False):
+        # When frozen, data files (zusatzstoffe.json, laves_toast_qt.exe) are
+        # NOT bundled inside the executable – they live in a Data/ subdirectory
+        # next to LAVES.exe.  Use sys.executable's parent as the base so that
+        # Data/ is always resolved relative to the actual exe location.
+        # Note: sys._MEIPASS must NOT be used here because in PyInstaller 6
+        # --onedir mode _MEIPASS points to the _internal/ subdirectory, not
+        # the directory where the exe was placed.
         base_dir = os.path.dirname(sys.executable)
     else:
         base_dir = os.path.dirname(os.path.abspath(__file__))
