@@ -7,7 +7,7 @@ from typing import Optional, List, Dict, Any
 
 from PySide6.QtCore import Qt, QDateTime, QProcess
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QCompleter, QFormLayout, QGridLayout, QHBoxLayout, QLabel,
+    QApplication, QComboBox, QCompleter, QFormLayout, QGridLayout, QHBoxLayout, QLabel,
     QLineEdit, QMainWindow, QMessageBox, QPushButton, QVBoxLayout, QWidget, QTabWidget,
     QTableWidget, QTableWidgetItem, QTextEdit, QFileDialog
 )
@@ -84,11 +84,6 @@ class EinzelpruefungWidget(QWidget):
         self.cbo_age.addItems(self.age_map.keys())
         self.cbo_age.setCurrentText("Kein Altersfilter")
 
-        self.cbo_feed = QComboBox()
-        feed_types = sorted({ft for a in additives for ft in (a.feed_type_allowed or [])} | {"(kein Filter)"})
-        self.cbo_feed.addItems(feed_types)
-        self.cbo_feed.setCurrentText("(kein Filter)")
-
         self.cbo_tierart_cat = QComboBox()
         tierart_categories = sorted({
             a.extra.get("tierart_kategorie")
@@ -97,18 +92,6 @@ class EinzelpruefungWidget(QWidget):
         } | {"Alle Kategorien"})
         self.cbo_tierart_cat.addItems(tierart_categories)
         self.cbo_tierart_cat.setCurrentText("Alle Kategorien")
-
-        self.chk_artspezifisch = QCheckBox("Nur artspezifische")
-        self.chk_artspezifisch.setChecked(False)
-
-        self.chk_age_limit = QCheckBox("Mit Altersgrenze")
-        self.chk_age_limit.setChecked(False)
-        self.txt_max_age = QLineEdit()
-        self.txt_max_age.setPlaceholderText("Max. Tage (z.B. 42)")
-        self.txt_max_age.setEnabled(False)
-        self.chk_age_limit.stateChanged.connect(
-            lambda: self.txt_max_age.setEnabled(self.chk_age_limit.isChecked())
-        )
 
         self.cbo_e = make_editable_combobox(idx["all_e_numbers"])
         self.cbo_sub = make_editable_combobox(idx["all_substances"])
@@ -132,11 +115,7 @@ class EinzelpruefungWidget(QWidget):
         form = QFormLayout()
         form.addRow("Tierart-Kat.:", self.cbo_tierart_cat)
         form.addRow("Tierart:", self.cbo_species)
-        form.addRow("", self.chk_artspezifisch)
         form.addRow("Alter:", self.cbo_age)
-        form.addRow("", self.chk_age_limit)
-        form.addRow("Max. Alter (Tage):", self.txt_max_age)
-        form.addRow("Futtermittel-Typ:", self.cbo_feed)
         form.addRow("E-Nummer:", self.cbo_e)
         form.addRow("Stoff:", self.cbo_sub)
         hval = QHBoxLayout()
@@ -154,11 +133,6 @@ class EinzelpruefungWidget(QWidget):
         self.cbo_tierart_cat.currentTextChanged.connect(self.on_tierart_cat_changed)
         self.cbo_species.currentTextChanged.connect(self.update_context)
         self.cbo_age.currentTextChanged.connect(self.update_context)
-        self.cbo_feed.currentTextChanged.connect(self.update_context)
-        self.cbo_tierart_cat.currentTextChanged.connect(self.update_context)
-        self.chk_artspezifisch.stateChanged.connect(self.update_context)
-        self.chk_age_limit.stateChanged.connect(self.update_context)
-        self.txt_max_age.textChanged.connect(self.update_context)
         self.cbo_e.currentTextChanged.connect(self.on_e_changed)
         self.cbo_sub.currentTextChanged.connect(self.on_s_changed)
 
@@ -217,26 +191,13 @@ class EinzelpruefungWidget(QWidget):
             self._syncing = False
 
     def filtered_substances(self, e: str) -> List[str]:
-        sp = self.cbo_species.currentText()
-        age = self.current_age()
-        feed = None if self.cbo_feed.currentText() == "(kein Filter)" else self.cbo_feed.currentText()
         if not e:
             return self.idx["all_substances"]
-
-        tierart_cat = self.cbo_tierart_cat.currentText()
-        only_artspez = self.chk_artspezifisch.isChecked()
-        max_age_days = None
-        if self.chk_age_limit.isChecked():
-            try:
-                max_age_days = float(self.txt_max_age.text())
-            except ValueError:
-                pass
-
         recs = match_additive_records(
-            self.idx, e, sp, age, "", feed,
-            tierart_kategorie=tierart_cat,
-            only_artspezifisch=only_artspez,
-            max_hoechstalter_tage=max_age_days
+            self.idx, e,
+            species=self.cbo_species.currentText(),
+            age_months=self.current_age(),
+            tierart_kategorie=self.cbo_tierart_cat.currentText(),
         )
         if recs:
             return sorted({(r.substance or "").strip() for r in recs if r.substance})
@@ -251,24 +212,11 @@ class EinzelpruefungWidget(QWidget):
             if not e_exact:
                 return
 
-            sp = self.cbo_species.currentText()
-            age = self.current_age()
-            feed = None if self.cbo_feed.currentText() == "(kein Filter)" else self.cbo_feed.currentText()
-
-            tierart_cat = self.cbo_tierart_cat.currentText()
-            only_artspez = self.chk_artspezifisch.isChecked()
-            max_age_days = None
-            if self.chk_age_limit.isChecked():
-                try:
-                    max_age_days = float(self.txt_max_age.text())
-                except ValueError:
-                    pass
-
             recs = match_additive_records(
-                self.idx, e_exact, sp, age, "", feed,
-                tierart_kategorie=tierart_cat,
-                only_artspezifisch=only_artspez,
-                max_hoechstalter_tage=max_age_days
+                self.idx, e_exact,
+                species=self.cbo_species.currentText(),
+                age_months=self.current_age(),
+                tierart_kategorie=self.cbo_tierart_cat.currentText(),
             )
 
             if not recs:
@@ -299,24 +247,12 @@ class EinzelpruefungWidget(QWidget):
                 self.cbo_e.setEditText("")
                 return
 
-            sp = self.cbo_species.currentText()
-            age = self.current_age()
-            feed = None if self.cbo_feed.currentText() == "(kein Filter)" else self.cbo_feed.currentText()
-
-            tierart_cat = self.cbo_tierart_cat.currentText()
-            only_artspez = self.chk_artspezifisch.isChecked()
-            max_age_days = None
-            if self.chk_age_limit.isChecked():
-                try:
-                    max_age_days = float(self.txt_max_age.text())
-                except ValueError:
-                    pass
-
             recs = match_additive_records(
-                self.idx, "", sp, age, sub, feed,
-                tierart_kategorie=tierart_cat,
-                only_artspezifisch=only_artspez,
-                max_hoechstalter_tage=max_age_days
+                self.idx, "",
+                species=self.cbo_species.currentText(),
+                age_months=self.current_age(),
+                substance_query=sub,
+                tierart_kategorie=self.cbo_tierart_cat.currentText(),
             )
             if not recs:
                 e_list = self.idx["sub_to_all_e_numbers"].get(sub.lower(), [])
@@ -342,24 +278,14 @@ class EinzelpruefungWidget(QWidget):
             return
 
         sp = self.cbo_species.currentText()
-        age = self.current_age()
-        feed = None if self.cbo_feed.currentText() == "(kein Filter)" else self.cbo_feed.currentText()
         sub = self.cbo_sub.currentText().strip()
 
-        tierart_cat = self.cbo_tierart_cat.currentText()
-        only_artspez = self.chk_artspezifisch.isChecked()
-        max_age_days = None
-        if self.chk_age_limit.isChecked():
-            try:
-                max_age_days = float(self.txt_max_age.text())
-            except ValueError:
-                pass
-
         recs = match_additive_records(
-            self.idx, e, sp, age, sub, feed,
-            tierart_kategorie=tierart_cat,
-            only_artspezifisch=only_artspez,
-            max_hoechstalter_tage=max_age_days
+            self.idx, e,
+            species=sp,
+            age_months=self.current_age(),
+            substance_query=sub,
+            tierart_kategorie=self.cbo_tierart_cat.currentText(),
         )
 
         if not recs:
@@ -408,11 +334,6 @@ class KombiPruefungWidget(QWidget):
         self.cbo_age.addItems(self.age_map.keys())
         self.cbo_age.setCurrentText("Kein Altersfilter")
 
-        self.cbo_feed = QComboBox()
-        feed_types = sorted({ft for a in additives for ft in (a.feed_type_allowed or [])} | {"(kein Filter)"})
-        self.cbo_feed.addItems(feed_types)
-        self.cbo_feed.setCurrentText("(kein Filter)")
-
         self.cbo_tierart_cat = QComboBox()
         tierart_categories = sorted({
             a.extra.get("tierart_kategorie")
@@ -421,9 +342,6 @@ class KombiPruefungWidget(QWidget):
         } | {"Alle Kategorien"})
         self.cbo_tierart_cat.addItems(tierart_categories)
         self.cbo_tierart_cat.setCurrentText("Alle Kategorien")
-
-        self.chk_artspezifisch = QCheckBox("Nur artspezifische")
-        self.chk_artspezifisch.setChecked(False)
 
         self.tbl = QTableWidget(1, 4)
         self.tbl.setHorizontalHeaderLabels(["E-Nummer", "Stoff", "Wert", "Einheit"])
@@ -450,9 +368,6 @@ class KombiPruefungWidget(QWidget):
         top.addWidget(self.cbo_species, 0, 3)
         top.addWidget(QLabel("Alter:"), 0, 4)
         top.addWidget(self.cbo_age, 0, 5)
-        top.addWidget(QLabel("Feed-Typ:"), 1, 0)
-        top.addWidget(self.cbo_feed, 1, 1)
-        top.addWidget(self.chk_artspezifisch, 1, 2, 1, 2)
 
         h = QHBoxLayout()
         h.addWidget(self.btn_add)
@@ -585,16 +500,11 @@ class KombiPruefungWidget(QWidget):
                 self._clear_combo(cb_s, self.idx["all_substances"])
                 return
 
-            sp = self.cbo_species.currentText()
-            age = self.age_map.get(self.cbo_age.currentText(), 0)
-            feed = None if self.cbo_feed.currentText() == "(kein Filter)" else self.cbo_feed.currentText()
-            tierart_cat = self.cbo_tierart_cat.currentText()
-            only_artspez = self.chk_artspezifisch.isChecked()
-
             recs = match_additive_records(
-                self.idx, e, sp, age, "", feed,
-                tierart_kategorie=tierart_cat,
-                only_artspezifisch=only_artspez
+                self.idx, e,
+                species=self.cbo_species.currentText(),
+                age_months=self.age_map.get(self.cbo_age.currentText(), 0),
+                tierart_kategorie=self.cbo_tierart_cat.currentText(),
             )
 
             if not recs:
@@ -634,16 +544,12 @@ class KombiPruefungWidget(QWidget):
                 self._clear_combo(cb_s, self.idx["all_substances"])
                 return
 
-            sp = self.cbo_species.currentText()
-            age = self.age_map.get(self.cbo_age.currentText(), 0)
-            feed = None if self.cbo_feed.currentText() == "(kein Filter)" else self.cbo_feed.currentText()
-            tierart_cat = self.cbo_tierart_cat.currentText()
-            only_artspez = self.chk_artspezifisch.isChecked()
-
             recs = match_additive_records(
-                self.idx, "", sp, age, sub, feed,
-                tierart_kategorie=tierart_cat,
-                only_artspezifisch=only_artspez
+                self.idx, "",
+                species=self.cbo_species.currentText(),
+                age_months=self.age_map.get(self.cbo_age.currentText(), 0),
+                substance_query=sub,
+                tierart_kategorie=self.cbo_tierart_cat.currentText(),
             )
 
             if not recs:
@@ -689,9 +595,7 @@ class KombiPruefungWidget(QWidget):
 
         sp = self.cbo_species.currentText()
         age = self.age_map.get(self.cbo_age.currentText(), 0)
-        feed = None if self.cbo_feed.currentText() == "(kein Filter)" else self.cbo_feed.currentText()
         tierart_cat = self.cbo_tierart_cat.currentText()
-        only_artspez = self.chk_artspezifisch.isChecked()
 
         html_blocks = []
         e_for_combo, val_for_combo = [], {}
@@ -699,9 +603,11 @@ class KombiPruefungWidget(QWidget):
         for row in rows:
             e, sub, val, unit = row["e"], row["sub"], row["val"], row["unit"]
             recs = match_additive_records(
-                self.idx, e, sp, age, sub, feed,
+                self.idx, e,
+                species=sp,
+                age_months=age,
+                substance_query=sub,
                 tierart_kategorie=tierart_cat,
-                only_artspezifisch=only_artspez
             )
             header = f"{e} {sub}".strip()
 
@@ -781,7 +687,7 @@ class KombiPruefungWidget(QWidget):
             elems = [
                 Paragraph("Laborauswertung Futtermittel-Zusatzstoffe (EG 1831/2003)", title),
                 Spacer(1, 10),
-                Paragraph(f"Tierart: {self.cbo_species.currentText()}  |  Alter: {self.cbo_age.currentText()}  |  Feed-Typ: {self.cbo_feed.currentText()}", small),
+                Paragraph(f"Tierart: {self.cbo_species.currentText()}  |  Alter: {self.cbo_age.currentText()}", small),
                 Spacer(1, 10),
                 Paragraph(self.out.toHtml(), small)
             ]

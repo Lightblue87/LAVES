@@ -550,12 +550,12 @@ def evaluate_single_value(
     unit = rec.unit
     ok = True
 
-    if has_min and value < rec.min_value:  # type: ignore[operator]
+    if has_min and value < rec.min_value:
         ok = False
         msgs.append(
             f"Unterschreitung: {value:g} {unit} < {rec.min_value:g} {unit}"
         )
-    if has_max and value > rec.max_value:  # type: ignore[operator]
+    if has_max and value > rec.max_value:
         ok = False
         msgs.append(
             f"Überschreitung: {value:g} {unit} > {rec.max_value:g} {unit}"
