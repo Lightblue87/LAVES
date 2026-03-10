@@ -92,10 +92,15 @@ def _make_session(retries: int = 3, timeout: int = 25):
 
 
 def _normalize_bvl_pdf_url(u: str) -> str:
-    u = re.sub(r";jsessionid=[^?]+", "", u, flags=re.I)
+    # Strip jsessionid path parameter (may appear before ? or at end of URL)
+    u = re.sub(r";jsessionid=[^?#\s]*", "", u, flags=re.I)
     if "/SharedDocs/Downloads/" in u and "__blob=publicationFile" not in u:
-        sep = "&" if "?" in u else "?"
-        u = u + sep + "__blob=publicationFile"
+        # Vorschaltseite: .htm/.html intermediate pages → convert to direct PDF download URL
+        if re.search(r"\.html?(\?|#|$)", u, flags=re.I):
+            u = re.sub(r"\.html?([?#].*)?$", ".pdf?__blob=publicationFile", u, flags=re.I)
+        else:
+            sep = "&" if "?" in u else "?"
+            u = u + sep + "__blob=publicationFile"
     return u
 
 
@@ -158,11 +163,13 @@ def _extract_links_from_text(text: str, base_url: str) -> List[str]:
             if not href:
                 continue
             absu = urljoin(base_url if not href.startswith("/") else base_host, href)
-            low = absu.lower()
+            # Normalize first (strips jsessionid, converts .html Vorschaltseite → .pdf)
+            norm = _normalize_bvl_pdf_url(absu)
+            low = norm.lower()
             if any(seg.lower() in low for seg in BVL_ALLOWED_PATHS):
                 if (low.endswith(".pdf") or ".pdf?" in low
                         or low.endswith(".htm") or low.endswith(".html")):
-                    found.append(_normalize_bvl_pdf_url(absu))
+                    found.append(norm)
     return found
 
 
@@ -183,7 +190,13 @@ def _discover_bvl_pdfs(
         log(f"[WARN] Landingpage-Fehler: {e}\n")
         log("[INFO] Versuche mit deaktivierter SSL-Verifikation…\n")
         try:
-            r = session.get(BVL_LANDING_URL, verify=False)
+            # Disable SSL verification globally on the session so ALL subsequent
+            # requests (fallback crawl, PDF downloads) also skip certificate checks.
+            session.verify = False
+            requests.packages.urllib3.disable_warnings(
+                requests.packages.urllib3.exceptions.InsecureRequestWarning
+            )
+            r = session.get(BVL_LANDING_URL)
             r = _maybe_bypass_cookie_check(session, r, log)
             log(f"[DISCOVER] GET (verify=False) {BVL_LANDING_URL} -> {r.status_code}\n")
             if not r.ok or not r.text:
