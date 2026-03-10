@@ -1381,11 +1381,14 @@ def main():
     apply_modern_theme(app)
 
     if getattr(sys, "frozen", False):
-        # For --onefile builds _MEIPASS is the temp extraction dir that contains
-        # bundled data.  For --onedir builds _MEIPASS equals the bundle directory
-        # (same folder as the executable).  Fall back to sys.executable's parent
-        # when _MEIPASS is not set.
-        base_dir = getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
+        # When frozen, data files (zusatzstoffe.json, laves_toast_qt.exe) are
+        # NOT bundled inside the executable – they live in a Data/ subdirectory
+        # next to LAVES.exe.  Use sys.executable's parent as the base so that
+        # Data/ is always resolved relative to the actual exe location.
+        # Note: sys._MEIPASS must NOT be used here because in PyInstaller 6
+        # --onedir mode _MEIPASS points to the _internal/ subdirectory, not
+        # the directory where the exe was placed.
+        base_dir = os.path.dirname(sys.executable)
     else:
         base_dir = os.path.dirname(os.path.abspath(__file__))
 
