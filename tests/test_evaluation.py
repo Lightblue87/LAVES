@@ -261,7 +261,8 @@ class TestValidateDatabase:
         report_file = str(tmp_path / "report.txt")
         validate_database([rec], report_path=report_file)
         assert os.path.isfile(report_file)
-        content = open(report_file, encoding="utf-8").read()
+        with open(report_file, encoding="utf-8") as fh:
+            content = fh.read()
         assert "validierungsbericht" in content.lower()
 
 
