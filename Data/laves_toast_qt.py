@@ -10,7 +10,7 @@ import contextlib
 import subprocess
 import traceback
 from pathlib import Path
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Set
 from urllib.parse import urljoin, urlparse
 
 from PySide6.QtCore import QThread, Signal, Qt, QTimer
@@ -92,15 +92,31 @@ def _make_session(retries: int = 3, timeout: int = 25):
 
 
 def _normalize_bvl_pdf_url(u: str) -> str:
-    # Strip jsessionid path parameter (may appear before ? or at end of URL)
+    u = _html.unescape(u.strip())
+
+    # jsessionid entfernen
     u = re.sub(r";jsessionid=[^?#\s]*", "", u, flags=re.I)
+
+    # Falls irgendwo vor /SharedDocs/Downloads/ noch ein Navigationspfad hängt:
+    # alles davor abschneiden und auf Domainwurzel setzen
+    m = re.search(r"(/SharedDocs/Downloads/.*)", u, flags=re.I)
+    if m:
+        u = "https://www.bvl.bund.de" + m.group(1)
+
+    # Falls nur SharedDocs/Downloads... ohne führenden Slash vorkommt
+    elif "SharedDocs/Downloads/" in u:
+        idx = u.lower().find("shareddocs/downloads/")
+        if idx != -1:
+            u = "https://www.bvl.bund.de/" + u[idx:]
+
+    # HTML-Vorschaltseiten in direkte PDF-Links umwandeln
     if "/SharedDocs/Downloads/" in u and "__blob=publicationFile" not in u:
-        # Vorschaltseite: .htm/.html intermediate pages → convert to direct PDF download URL
         if re.search(r"\.html?(\?|#|$)", u, flags=re.I):
             u = re.sub(r"\.html?([?#].*)?$", ".pdf?__blob=publicationFile", u, flags=re.I)
         else:
             sep = "&" if "?" in u else "?"
             u = u + sep + "__blob=publicationFile"
+
     return u
 
 
@@ -151,26 +167,43 @@ def _build_seed_urls_from_pdf_dir(pdf_dir: Path) -> List[str]:
 def _extract_links_from_text(text: str, base_url: str) -> List[str]:
     found: List[str] = []
     attr_pats = [
-        r"href=[\"']([^\"']+)[\"']",
-        r"href=([^\s>\"']+)",
-        r"data-(?:href|url|src|link)=[\"']([^\"']+)[\"']",
+        r'href=["\']([^"\']+)["\']',
+        r'href=([^\s>"\']+)',
+        r'data-(?:href|url|src|link)=["\']([^"\']+)["\']',
     ]
-    js_path_pat = r"[\"'](/SharedDocs/Downloads/[^\"']+)[\"']"
+    js_path_pat = r'["\'](/?SharedDocs/Downloads/[^"\']+)["\']'
+
     base_host = "https://www.bvl.bund.de"
+
     for pat in attr_pats + [js_path_pat]:
         for m in re.finditer(pat, text, flags=re.I | re.S):
             href = _html.unescape(m.group(1).strip())
             if not href:
                 continue
-            absu = urljoin(base_url if not href.startswith("/") else base_host, href)
-            # Normalize first (strips jsessionid, converts .html Vorschaltseite → .pdf)
+
+            # SharedDocs immer absolut auf Domainwurzel setzen
+            if "SharedDocs/Downloads/" in href:
+                href = href[href.find("SharedDocs/Downloads/"):]
+                if not href.startswith("/"):
+                    href = "/" + href
+                absu = base_host + href
+            else:
+                absu = urljoin(base_url, href)
+
             norm = _normalize_bvl_pdf_url(absu)
             low = norm.lower()
+
             if any(seg.lower() in low for seg in BVL_ALLOWED_PATHS):
-                if (low.endswith(".pdf") or ".pdf?" in low
-                        or low.endswith(".htm") or low.endswith(".html")):
+                if low.endswith(".pdf") or ".pdf?" in low or low.endswith(".htm") or low.endswith(".html"):
                     found.append(norm)
-    return found
+
+    dedup: List[str] = []
+    seen: Set[str] = set()
+    for u in found:
+        if u not in seen:
+            seen.add(u)
+            dedup.append(u)
+    return dedup
 
 
 def _discover_bvl_pdfs(
@@ -528,6 +561,32 @@ class DownloadWorker(QThread):
             self.finished.emit(False)
 
 
+class _ParserWriter:
+    """File-like writer that forwards parser print() output line-by-line via a Qt signal.
+
+    Using this instead of a one-shot io.StringIO capture means the UI receives
+    progress messages while laves_updater_v6.main() is still running, so the
+    window does not appear frozen during the (potentially slow) PDF parse.
+    """
+
+    def __init__(self, emit_fn: Callable[[str], None]) -> None:
+        self._emit = emit_fn
+        self._buf = ""
+
+    def write(self, s: str) -> int:
+        self._buf += s
+        while "\n" in self._buf:
+            line, self._buf = self._buf.split("\n", 1)
+            if line.strip():
+                self._emit(f"[PARSER] {line}\n")
+        return len(s)
+
+    def flush(self) -> None:
+        if self._buf.strip():
+            self._emit(f"[PARSER] {self._buf}\n")
+        self._buf = ""
+
+
 class ParserWorker(QThread):
     message = Signal(str)
     finished = Signal(bool)
@@ -540,14 +599,10 @@ class ParserWorker(QThread):
         try:
             self.message.emit("[PARSER] Starte JSON-Erstellung aus PDFs …\n")
 
-            captured = io.StringIO()
-            with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
+            writer = _ParserWriter(self.message.emit)
+            with contextlib.redirect_stdout(writer), contextlib.redirect_stderr(writer):
                 laves_updater_v6.main(pdf_dir=self.pdf_dir)
-
-            output = captured.getvalue().strip()
-            if output:
-                for line in output.splitlines():
-                    self.message.emit(f"[PARSER] {line}\n")
+            writer.flush()
 
             self.message.emit("[PARSER] Fertig – JSON sollte jetzt aktualisiert sein.\n")
             self.finished.emit(True)

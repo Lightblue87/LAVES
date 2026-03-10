@@ -1199,6 +1199,9 @@ def categorize_records(data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 def check_quality(data: List[Dict[str, Any]]) -> None:
     total   = len(data)
+    if total == 0:
+        print("Qualität: 0 Records – nichts zu prüfen.")
+        return
     ok_name = sum(1 for r in data if r["name"])
     ok_tier = sum(1 for r in data if r["tierarten"])
     ok_max  = sum(1 for r in data if r["max_mg_kg"])
