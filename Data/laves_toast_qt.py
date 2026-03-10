@@ -518,6 +518,15 @@ def _resolve_base_dir() -> Path:
     env = os.environ.get("LAVES_BASE_DIR")
     if env:
         return Path(env).expanduser().resolve()
+    if getattr(sys, "frozen", False):
+        # When compiled with PyInstaller, __file__ may point inside a
+        # temporary extraction directory (_MEIPASS) rather than next to the
+        # executable.  Use sys.executable so that PDF downloads and the output
+        # JSON are written to a persistent location alongside the exe.
+        p = Path(sys.executable).resolve().parent
+        if p.name.lower() == "data":
+            return p.parent
+        return p
     try:
         p = Path(__file__).resolve().parent
     except NameError:

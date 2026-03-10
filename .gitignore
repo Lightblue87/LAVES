@@ -1,1 +1,18 @@
 Data/__pycache__
+__pycache__/
+*.pyc
+*.pyo
+
+# PyInstaller build artifacts
+build/
+dist/
+*.spec.bak
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# User data generated at runtime (not source)
+Data/_bvl_pdfs/
+Data/update.log

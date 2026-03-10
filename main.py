@@ -1381,7 +1381,11 @@ def main():
     apply_modern_theme(app)
 
     if getattr(sys, "frozen", False):
-        base_dir = os.path.dirname(sys.executable)
+        # For --onefile builds _MEIPASS is the temp extraction dir that contains
+        # bundled data.  For --onedir builds _MEIPASS equals the bundle directory
+        # (same folder as the executable).  Fall back to sys.executable's parent
+        # when _MEIPASS is not set.
+        base_dir = getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
     else:
         base_dir = os.path.dirname(os.path.abspath(__file__))
 
