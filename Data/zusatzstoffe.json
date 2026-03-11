@@ -13820,7 +13820,7 @@
     "rechtsgrundlage": "VO (EG)\nNr. 2017/429",
     "source_file": "1831__futtermittel_zusatzstoffe_verdaulichkeitsfoerderer.pdf",
     "source_page": 34,
-    "tierart_kategorie": "Sonstige",
+    "tierart_kategorie": "Geflügel",
     "tierart_spezifisch": true
   },
   {
@@ -14076,7 +14076,7 @@
     "rechtsgrundlage": "DVO (EU)\nNr. 2022/1453",
     "source_file": "1831__futtermittel_zusatzstoffe_verdaulichkeitsfoerderer.pdf",
     "source_page": 74,
-    "tierart_kategorie": "Schweine",
+    "tierart_kategorie": "Geflügel",
     "tierart_spezifisch": true
   },
   {
@@ -17142,13 +17142,13 @@
     "tierarten": "Truthühner",
     "hoechstalter_tage": null,
     "min_mg_kg": 5.0,
-    "max_mg_kg": 16.0,
+    "max_mg_kg": 5.0,
     "charakteristika": null,
     "geltung_bis": "15.12.2011",
     "rechtsgrundlage": "VO (EG)\nNr. 2380/2001",
     "source_file": "70524__futtermittel_zusatzstoffe_kokzidiostatika_histomonostatika.pdf",
     "source_page": 14,
-    "tierart_kategorie": "Sonstige",
+    "tierart_kategorie": "Geflügel",
     "tierart_spezifisch": true
   },
   {
