@@ -1,408 +1,34 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import json
 import sys
 import os
-from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any
 
-from PySide6.QtCore import Qt, QDateTime, QProcess
+from PySide6.QtCore import Qt, QProcess
 from PySide6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QCompleter, QFormLayout, QGridLayout, QHBoxLayout, QLabel,
+    QApplication, QComboBox, QCompleter, QFormLayout, QGridLayout, QHBoxLayout, QLabel,
     QLineEdit, QMainWindow, QMessageBox, QPushButton, QVBoxLayout, QWidget, QTabWidget,
     QTableWidget, QTableWidgetItem, QTextEdit, QFileDialog
 )
 from PySide6.QtGui import QPalette, QColor, QFont
 from PySide6.QtWidgets import QStyleFactory
 
-# =========================================================
-# Datenmodell
-# =========================================================
-
-@dataclass
-class Additive:
-    e_number: str
-    substance: Optional[str]
-    chemical: Optional[str]
-    category: Optional[str]
-    species: str
-    max_age_months: Optional[int]
-    unit: Optional[str]
-    min_value: Optional[float]
-    max_value: Optional[float]
-    notes: Optional[str]
-    source_ref: Optional[str]
-    has_combination_rule: Optional[bool] = False
-    combination_rule_ids: Optional[List[str]] = None
-    feed_type_allowed: Optional[List[str]] = None
-    feed_type_primary: Optional[str] = None
-    status: Optional[str] = None
-    extra: Dict[str, Any] = field(default_factory=dict)
-
-@dataclass
-class ComboRule:
-    rule_id: str
-    description: str
-    affected_e_numbers: Optional[List[str]]
-    affected_categories: Optional[List[str]]
-    max_total_value: float
-    unit: str
-    species: List[str]
-    source_refs: Optional[List[str]] = None
-    confidence: Optional[str] = None
-    extra: Dict[str, Any] = field(default_factory=dict)
-
-# =========================================================
-# Loader
-# =========================================================
-
-def _to_float(x):
-    if x in (None, ""):
-        return None
-    try:
-        return float(str(x).replace(",", "."))
-    except Exception:
-        return None
-
-def _to_int(x):
-    if x in (None, ""):
-        return None
-    try:
-        return int(x)
-    except Exception:
-        try:
-            return int(float(str(x).replace(",", ".")))
-        except Exception:
-            return None
-
-def load_additives(path: str) -> List[Additive]:
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            raw = json.load(f)
-    except FileNotFoundError as e:
-        raise FileNotFoundError(f"Datei nicht gefunden: {path}") from e
-    except json.JSONDecodeError as e:
-        raise ValueError(f"Fehlerhafte JSON-Datei bei {path}: {e}") from e
-    except Exception as e:
-        raise Exception(f"Fehler beim Laden von {path}: {e}") from e
-
-    items: List[Additive] = []
-
-    def _as_list(x):
-        if x is None:
-            return []
-        if isinstance(x, list):
-            return x
-        return [str(x)]
-
-    for r in raw:
-        if "e_number" in r or "substance" in r or "min_value" in r or "max_value" in r:
-            items.append(Additive(
-                e_number=str(r.get("e_number", "")).strip() or str(r.get("kennnummer","")).strip(),
-                substance=r.get("substance") or r.get("name"),
-                chemical=r.get("chemical"),
-                category=r.get("category"),
-                species=r.get("species", "Alle Tierarten"),
-                max_age_months=_to_int(r.get("max_age_months")),
-                unit=r.get("unit"),
-                min_value=_to_float(r.get("min_value")),
-                max_value=_to_float(r.get("max_value")),
-                notes=r.get("notes"),
-                source_ref=r.get("source_ref"),
-                has_combination_rule=bool(r.get("has_combination_rule", False)),
-                combination_rule_ids=r.get("combination_rule_ids"),
-                feed_type_allowed=r.get("feed_type_allowed"),
-                feed_type_primary=r.get("feed_type_primary"),
-                status=r.get("status"),
-                extra={k:v for k,v in r.items() if k not in {"e_number","substance","chemical","category","species","max_age_months","unit","min_value","max_value","notes","source_ref","has_combination_rule","combination_rule_ids","feed_type_allowed","feed_type_primary","status"}}
-            ))
-        elif "kennnummer" in r:
-            min_v = r.get("min_mg_kg")
-            max_v = r.get("max_mg_kg")
-            einheit = r.get("einheit") or r.get("Maßeinheit") or r.get("masseinheit")
-            unit = str(einheit).strip() if einheit else ("mg/kg" if (min_v is not None or max_v is not None) else None)
-
-            species_raw = r.get("tierarten") or r.get("zieltierarten")
-            if not species_raw or str(species_raw).strip() in ("", "—", "–", "-"):
-                species_clean = "Alle Tierarten"
-            elif isinstance(species_raw, list):
-                species_clean = ", ".join(map(str, species_raw)).strip() or "Alle Tierarten"
-            else:
-                s = str(species_raw)
-                s = s.replace("Alle Tierar-\nten", "Alle Tierarten")
-                s = s.replace("Alle Tier-\narten", "Alle Tierarten")
-                s = s.replace("Alle\nTierarten", "Alle Tierarten")
-                species_clean = s.strip() or "Alle Tierarten"
-
-            alter_tage = _to_float(r.get("hoechstalter_tage") or r.get("hoechstalter"))
-            max_age = max(1, round(alter_tage / 30.44)) if alter_tage is not None else None
-
-            items.append(Additive(
-                e_number=str(r.get("kennnummer") or "").strip(),
-                substance=(r.get("name") or None),
-                chemical=None,
-                category=None,
-                species=species_clean,
-                max_age_months=max_age,
-                unit=unit,
-                min_value=_to_float(min_v),
-                max_value=_to_float(max_v),
-                notes=r.get("notizen"),
-                source_ref=(f'{r.get("source_file","")}:S.{r.get("source_page")}' if r.get("source_file") else None),
-                has_combination_rule=False,
-                combination_rule_ids=None,
-                feed_type_allowed=None,
-                feed_type_primary=None,
-                status=r.get("rechtsgrundlage") or r.get("geltung_bis"),
-                extra={k:v for k,v in r.items() if k not in {"kennnummer","name","tierarten","zieltierarten","hoechstalter","hoechstalter_tage","min_mg_kg","max_mg_kg","einheit","Maßeinheit","masseinheit","notizen","geltung_bis","rechtsgrundlage","source_file","source_page"}}
-            ))
-        else:
-            items.append(Additive(
-                e_number=str(r.get("kennnummer") or r.get("e_number") or "").strip(),
-                substance=r.get("name") or r.get("substance"),
-                chemical=r.get("chemical"),
-                category=r.get("category"),
-                species=str(r.get("species") or r.get("tierarten") or "Alle Tierarten"),
-                max_age_months=_to_int(r.get("max_age_months") or r.get("hoechstalter")),
-                unit=r.get("unit") or r.get("einheit"),
-                min_value=_to_float(r.get("min_value") or r.get("min_mg_kg")),
-                max_value=_to_float(r.get("max_value") or r.get("max_mg_kg")),
-                notes=r.get("notes") or r.get("notizen"),
-                source_ref=r.get("source_ref"),
-                has_combination_rule=bool(r.get("has_combination_rule", False)),
-                combination_rule_ids=r.get("combination_rule_ids"),
-                feed_type_allowed=r.get("feed_type_allowed"),
-                feed_type_primary=r.get("feed_type_primary"),
-                status=r.get("status") or r.get("rechtsgrundlage"),
-                extra={k:v for k,v in r.items()}
-            ))
-    return items
-
-def load_combo_rules(path: str) -> List[ComboRule]:
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            raw = json.load(f)
-    except Exception:
-        return []
-
-    rules = []
-    for r in raw:
-        rules.append(ComboRule(
-            rule_id=str(r.get("rule_id")),
-            description=r.get("description", ""),
-            affected_e_numbers=r.get("affected_e_numbers"),
-            affected_categories=r.get("affected_categories"),
-            max_total_value=_to_float(r.get("max_total_value") or 0.0),
-            unit=r.get("unit", "mg/kg"),
-            species=r.get("species", ["Alle Tierarten"]),
-            source_refs=r.get("source_refs"),
-            confidence=r.get("confidence")
-        ))
-    return rules
-
-# =========================================================
-# Indexe & Business-Logik
-# =========================================================
-
-def build_indexes(additives: List[Additive]) -> Dict[str, Any]:
-    species_map: Dict[str, Dict[str, List[Additive]]] = {}
-    e_to_category: Dict[str, set] = {}
-    all_species, ages = set(), set()
-
-    for a in additives:
-        sp = a.species or "Alle Tierarten"
-        all_species.add(sp)
-        species_map.setdefault(sp, {}).setdefault(a.e_number.upper(), []).append(a)
-        if a.category:
-            e_to_category.setdefault(a.e_number.upper(), set()).add(a.category)
-        if a.max_age_months is not None:
-            ages.add(a.max_age_months)
-
-    e_to_all_substances: Dict[str, set] = {}
-    sub_to_all_e_numbers: Dict[str, set] = {}
-    for a in additives:
-        e = (a.e_number or "").upper()
-        sub = (a.substance or "").strip()
-        if e:
-            e_to_all_substances.setdefault(e, set())
-            if sub:
-                e_to_all_substances[e].add(sub)
-        if sub:
-            sub_to_all_e_numbers.setdefault(sub.lower(), set())
-            if e:
-                sub_to_all_e_numbers[sub.lower()].add(e)
-
-    keyword_to_species_keys: Dict[str, set] = {}
-    for a in additives:
-        sp = a.species or "Alle Tierarten"
-        for kw in extract_individual_species(sp):
-            keyword_to_species_keys.setdefault(kw, set()).add(sp)
-
-    return {
-        "species_map": species_map,
-        "e_to_category": e_to_category,
-        "all_species": sorted(all_species | {"Alle Tierarten"}),
-        "all_e_numbers": sorted({a.e_number.upper() for a in additives if a.e_number}),
-        "all_substances": sorted({(a.substance or "").strip() for a in additives if a.substance}),
-        "age_options": sorted(ages),
-        "all_units": sorted({a.unit for a in additives if a.unit}),
-        "e_to_all_substances": {k: sorted(v) for k, v in e_to_all_substances.items()},
-        "sub_to_all_e_numbers": {k: sorted(v) for k, v in sub_to_all_e_numbers.items()},
-        "keyword_to_species_keys": {k: sorted(v) for k, v in keyword_to_species_keys.items()},
-    }
-
-CATEGORY_SPECIES_KEYWORDS: Dict[str, Dict[str, str]] = {
-    "Schweine": {
-        'schwein': 'Schweine', 'ferkel': 'Ferkel', 'sau': 'Sauen',
-    },
-    "Geflügel": {
-        'masthuh': 'Masthühner', 'legehuh': 'Legehennen', 'junghen': 'Junghennen',
-        'lege': 'Legehennen', 'henne': 'Hennen', 'huhn': 'Hühner',
-        'truthahn': 'Truthühner', 'truthühn': 'Truthühner',
-        'ente': 'Enten', 'gans': 'Gänse', 'ziervog': 'Ziervögel',
-        'geflüg': 'Geflügel', 'vogel': 'Vögel',
-    },
-    "Rinder": {
-        'rind': 'Rinder', 'kalb': 'Kälber', 'kuh': 'Kühe',
-        'bulle': 'Bullen', 'mastrin': 'Mastrinder', 'milchkuh': 'Milchkühe',
-        'wiederkä': 'Wiederkäuer',
-    },
-    "Schafe/Ziegen": {
-        'schaf': 'Schafe', 'lamm': 'Lämmer', 'ziege': 'Ziegen',
-        'bock': 'Böcke',
-    },
-    "Heimtiere": {
-        'hund': 'Hunde', 'katze': 'Katzen', 'kaninchen': 'Kaninchen',
-        'pferd': 'Pferde', 'pony': 'Ponys', 'esel': 'Esel',
-    },
-    "Fische/Krebstiere": {
-        'fisch': 'Fische', 'krebs': 'Krebstiere', 'forelle': 'Forellen',
-        'lachs': 'Lachs', 'garnele': 'Garnelen',
-    },
-    "Sonstige": {
-        'strauß': 'Strauße', 'kaninchen': 'Kaninchen',
-        'pferd': 'Pferde', 'hase': 'Hasen', 'zier': 'Ziervögel',
-    },
-}
-
-_ALL_SPECIES_KEYWORDS: Dict[str, str] = {}
-for _kws in CATEGORY_SPECIES_KEYWORDS.values():
-    _ALL_SPECIES_KEYWORDS.update(_kws)
-
-def extract_individual_species(tierarten_text: str, category: Optional[str] = None) -> set:
-    if not tierarten_text:
-        return set()
-
-    text = str(tierarten_text).lower()
-    text = text.replace('\n', ' ').replace('\r', ' ').replace(';', ' ')
-    text = text.replace('-', ' ').replace('  ', ' ').strip()
-
-    if category and category in CATEGORY_SPECIES_KEYWORDS:
-        keywords = CATEGORY_SPECIES_KEYWORDS[category]
-    else:
-        keywords = _ALL_SPECIES_KEYWORDS
-
-    species = set()
-    for keyword, species_name in keywords.items():
-        if keyword in text:
-            species.add(species_name)
-
-    return species
-
-def match_additive_records(idx: Dict[str, Any], e_number: str, species: str,
-                           age_months: int, substance_query: str = "",
-                           feed_type: Optional[str] = None,
-                           tierart_kategorie: Optional[str] = None,
-                           only_artspezifisch: bool = False,
-                           max_hoechstalter_tage: Optional[float] = None) -> List[Additive]:
-    e_norm = (e_number or "").strip().upper()
-    sub_q = (substance_query or "").strip().lower()
-    species_map = idx["species_map"]
-    candidates: List[Additive] = []
-
-    def valid(rec: Additive):
-        if rec.max_age_months is not None and age_months > rec.max_age_months:
-            return False
-        if sub_q and sub_q not in (rec.substance or "").lower():
-            return False
-        if feed_type and rec.feed_type_allowed and feed_type not in rec.feed_type_allowed:
-            return False
-        if tierart_kategorie and tierart_kategorie != "Alle Kategorien":
-            if rec.extra.get("tierart_kategorie") != tierart_kategorie:
-                return False
-        if only_artspezifisch and not rec.extra.get("tierart_spezifisch", False):
-            return False
-        if max_hoechstalter_tage is not None:
-            hoechstalter = rec.extra.get("hoechstalter_tage")
-            if hoechstalter is None or hoechstalter > max_hoechstalter_tage:
-                return False
-        return True
-
-    def resolve_species_keys(selected: str) -> List[str]:
-        if not selected or selected == "Alle Tierarten":
-            return list(species_map.keys())
-        keys = set()
-        if selected in species_map:
-            keys.add(selected)
-        for raw_sp in idx.get("keyword_to_species_keys", {}).get(selected, []):
-            keys.add(raw_sp)
-        keys.add("Alle Tierarten")
-        return list(keys)
-
-    seen_ids: set = set()
-
-    def add_unique(rec: Additive):
-        rid = id(rec)
-        if rid not in seen_ids:
-            seen_ids.add(rid)
-            candidates.append(rec)
-
-    if e_norm:
-        for sp in resolve_species_keys(species):
-            for rec in species_map.get(sp, {}).get(e_norm, []):
-                if valid(rec):
-                    add_unique(rec)
-        return candidates
-
-    if sub_q:
-        for sp in resolve_species_keys(species):
-            for recs in species_map.get(sp, {}).values():
-                for rec in recs:
-                    if valid(rec):
-                        add_unique(rec)
-        return candidates
-
-    return []
-
-def format_range(rec: Additive) -> str:
-    parts = []
-    if rec.min_value is not None:
-        parts.append(f"≥ {rec.min_value:g}")
-    if rec.max_value is not None:
-        parts.append(f"≤ {rec.max_value:g}")
-    return " und ".join(parts) if parts else "kein Grenzwert hinterlegt"
-
-def evaluate_single_value(value: float, rec: Additive) -> Tuple[bool, List[str]]:
-    msgs, ok = [], True
-    unit = rec.unit or "—"
-    if rec.min_value is not None and value < rec.min_value:
-        ok = False
-        msgs.append(f"Unterschreitung: {value:g} {unit} < {rec.min_value:g} {unit}")
-    if rec.max_value is not None and value > rec.max_value:
-        ok = False
-        msgs.append(f"Überschreitung: {value:g} {unit} > {rec.max_value:g} {unit}")
-    if ok:
-        msgs.append("Ergebnis: KONFORM mit den hinterlegten Grenzwerten.")
-    if rec.notes:
-        msgs.append(f"Hinweise: {rec.notes}")
-    if rec.source_ref:
-        msgs.append(f"Quelle: {rec.source_ref}")
-    if rec.unit is None:
-        msgs.append("⚠ Einheit im Datensatz fehlt – bitte Quelle/Einheit prüfen.")
-    if rec.status:
-        msgs.append(f"Status: {rec.status}")
-    return ok, msgs
+# Pure evaluation logic lives in laves_eval – no Qt dependency there.
+from laves_eval import (
+    Additive,
+    ComboRule,
+    load_additives,
+    load_combo_rules,
+    build_indexes,
+    extract_individual_species,
+    match_additive_records,
+    format_range,
+    evaluate_single_value,
+    find_applicable_combo_rules,
+    validate_database,
+    setup_logging,
+)
 
 # =========================================================
 # UI Hilfsfunktionen
@@ -458,11 +84,6 @@ class EinzelpruefungWidget(QWidget):
         self.cbo_age.addItems(self.age_map.keys())
         self.cbo_age.setCurrentText("Kein Altersfilter")
 
-        self.cbo_feed = QComboBox()
-        feed_types = sorted({ft for a in additives for ft in (a.feed_type_allowed or [])} | {"(kein Filter)"})
-        self.cbo_feed.addItems(feed_types)
-        self.cbo_feed.setCurrentText("(kein Filter)")
-
         self.cbo_tierart_cat = QComboBox()
         tierart_categories = sorted({
             a.extra.get("tierart_kategorie")
@@ -471,18 +92,6 @@ class EinzelpruefungWidget(QWidget):
         } | {"Alle Kategorien"})
         self.cbo_tierart_cat.addItems(tierart_categories)
         self.cbo_tierart_cat.setCurrentText("Alle Kategorien")
-
-        self.chk_artspezifisch = QCheckBox("Nur artspezifische")
-        self.chk_artspezifisch.setChecked(False)
-
-        self.chk_age_limit = QCheckBox("Mit Altersgrenze")
-        self.chk_age_limit.setChecked(False)
-        self.txt_max_age = QLineEdit()
-        self.txt_max_age.setPlaceholderText("Max. Tage (z.B. 42)")
-        self.txt_max_age.setEnabled(False)
-        self.chk_age_limit.stateChanged.connect(
-            lambda: self.txt_max_age.setEnabled(self.chk_age_limit.isChecked())
-        )
 
         self.cbo_e = make_editable_combobox(idx["all_e_numbers"])
         self.cbo_sub = make_editable_combobox(idx["all_substances"])
@@ -506,11 +115,7 @@ class EinzelpruefungWidget(QWidget):
         form = QFormLayout()
         form.addRow("Tierart-Kat.:", self.cbo_tierart_cat)
         form.addRow("Tierart:", self.cbo_species)
-        form.addRow("", self.chk_artspezifisch)
         form.addRow("Alter:", self.cbo_age)
-        form.addRow("", self.chk_age_limit)
-        form.addRow("Max. Alter (Tage):", self.txt_max_age)
-        form.addRow("Futtermittel-Typ:", self.cbo_feed)
         form.addRow("E-Nummer:", self.cbo_e)
         form.addRow("Stoff:", self.cbo_sub)
         hval = QHBoxLayout()
@@ -528,11 +133,6 @@ class EinzelpruefungWidget(QWidget):
         self.cbo_tierart_cat.currentTextChanged.connect(self.on_tierart_cat_changed)
         self.cbo_species.currentTextChanged.connect(self.update_context)
         self.cbo_age.currentTextChanged.connect(self.update_context)
-        self.cbo_feed.currentTextChanged.connect(self.update_context)
-        self.cbo_tierart_cat.currentTextChanged.connect(self.update_context)
-        self.chk_artspezifisch.stateChanged.connect(self.update_context)
-        self.chk_age_limit.stateChanged.connect(self.update_context)
-        self.txt_max_age.textChanged.connect(self.update_context)
         self.cbo_e.currentTextChanged.connect(self.on_e_changed)
         self.cbo_sub.currentTextChanged.connect(self.on_s_changed)
 
@@ -591,26 +191,13 @@ class EinzelpruefungWidget(QWidget):
             self._syncing = False
 
     def filtered_substances(self, e: str) -> List[str]:
-        sp = self.cbo_species.currentText()
-        age = self.current_age()
-        feed = None if self.cbo_feed.currentText() == "(kein Filter)" else self.cbo_feed.currentText()
         if not e:
             return self.idx["all_substances"]
-
-        tierart_cat = self.cbo_tierart_cat.currentText()
-        only_artspez = self.chk_artspezifisch.isChecked()
-        max_age_days = None
-        if self.chk_age_limit.isChecked():
-            try:
-                max_age_days = float(self.txt_max_age.text())
-            except ValueError:
-                pass
-
         recs = match_additive_records(
-            self.idx, e, sp, age, "", feed,
-            tierart_kategorie=tierart_cat,
-            only_artspezifisch=only_artspez,
-            max_hoechstalter_tage=max_age_days
+            self.idx, e,
+            species=self.cbo_species.currentText(),
+            age_months=self.current_age(),
+            tierart_kategorie=self.cbo_tierart_cat.currentText(),
         )
         if recs:
             return sorted({(r.substance or "").strip() for r in recs if r.substance})
@@ -625,24 +212,11 @@ class EinzelpruefungWidget(QWidget):
             if not e_exact:
                 return
 
-            sp = self.cbo_species.currentText()
-            age = self.current_age()
-            feed = None if self.cbo_feed.currentText() == "(kein Filter)" else self.cbo_feed.currentText()
-
-            tierart_cat = self.cbo_tierart_cat.currentText()
-            only_artspez = self.chk_artspezifisch.isChecked()
-            max_age_days = None
-            if self.chk_age_limit.isChecked():
-                try:
-                    max_age_days = float(self.txt_max_age.text())
-                except ValueError:
-                    pass
-
             recs = match_additive_records(
-                self.idx, e_exact, sp, age, "", feed,
-                tierart_kategorie=tierart_cat,
-                only_artspezifisch=only_artspez,
-                max_hoechstalter_tage=max_age_days
+                self.idx, e_exact,
+                species=self.cbo_species.currentText(),
+                age_months=self.current_age(),
+                tierart_kategorie=self.cbo_tierart_cat.currentText(),
             )
 
             if not recs:
@@ -673,24 +247,12 @@ class EinzelpruefungWidget(QWidget):
                 self.cbo_e.setEditText("")
                 return
 
-            sp = self.cbo_species.currentText()
-            age = self.current_age()
-            feed = None if self.cbo_feed.currentText() == "(kein Filter)" else self.cbo_feed.currentText()
-
-            tierart_cat = self.cbo_tierart_cat.currentText()
-            only_artspez = self.chk_artspezifisch.isChecked()
-            max_age_days = None
-            if self.chk_age_limit.isChecked():
-                try:
-                    max_age_days = float(self.txt_max_age.text())
-                except ValueError:
-                    pass
-
             recs = match_additive_records(
-                self.idx, "", sp, age, sub, feed,
-                tierart_kategorie=tierart_cat,
-                only_artspezifisch=only_artspez,
-                max_hoechstalter_tage=max_age_days
+                self.idx, "",
+                species=self.cbo_species.currentText(),
+                age_months=self.current_age(),
+                substance_query=sub,
+                tierart_kategorie=self.cbo_tierart_cat.currentText(),
             )
             if not recs:
                 e_list = self.idx["sub_to_all_e_numbers"].get(sub.lower(), [])
@@ -716,24 +278,14 @@ class EinzelpruefungWidget(QWidget):
             return
 
         sp = self.cbo_species.currentText()
-        age = self.current_age()
-        feed = None if self.cbo_feed.currentText() == "(kein Filter)" else self.cbo_feed.currentText()
         sub = self.cbo_sub.currentText().strip()
 
-        tierart_cat = self.cbo_tierart_cat.currentText()
-        only_artspez = self.chk_artspezifisch.isChecked()
-        max_age_days = None
-        if self.chk_age_limit.isChecked():
-            try:
-                max_age_days = float(self.txt_max_age.text())
-            except ValueError:
-                pass
-
         recs = match_additive_records(
-            self.idx, e, sp, age, sub, feed,
-            tierart_kategorie=tierart_cat,
-            only_artspezifisch=only_artspez,
-            max_hoechstalter_tage=max_age_days
+            self.idx, e,
+            species=sp,
+            age_months=self.current_age(),
+            substance_query=sub,
+            tierart_kategorie=self.cbo_tierart_cat.currentText(),
         )
 
         if not recs:
@@ -762,23 +314,6 @@ class EinzelpruefungWidget(QWidget):
 # Kombinationsprüfung
 # =========================================================
 
-def find_applicable_combo_rules(rules: List[ComboRule], e_numbers: List[str],
-                                species: str, e_to_category: Dict[str, set]) -> List[ComboRule]:
-    e_set = {e.upper().strip() for e in e_numbers if e.strip()}
-    applicable = []
-    for r in rules:
-        if "Alle Tierarten" not in r.species and species not in r.species:
-            continue
-        if r.affected_e_numbers and e_set & {x.upper() for x in r.affected_e_numbers}:
-            applicable.append(r)
-            continue
-        if r.affected_categories:
-            for e in e_set:
-                if e_to_category.get(e, set()) & set(r.affected_categories):
-                    applicable.append(r)
-                    break
-    return applicable
-
 class KombiPruefungWidget(QWidget):
     def __init__(self, additives: List[Additive], idx: Dict[str, Any], rules: List[ComboRule]):
         super().__init__()
@@ -799,11 +334,6 @@ class KombiPruefungWidget(QWidget):
         self.cbo_age.addItems(self.age_map.keys())
         self.cbo_age.setCurrentText("Kein Altersfilter")
 
-        self.cbo_feed = QComboBox()
-        feed_types = sorted({ft for a in additives for ft in (a.feed_type_allowed or [])} | {"(kein Filter)"})
-        self.cbo_feed.addItems(feed_types)
-        self.cbo_feed.setCurrentText("(kein Filter)")
-
         self.cbo_tierart_cat = QComboBox()
         tierart_categories = sorted({
             a.extra.get("tierart_kategorie")
@@ -812,9 +342,6 @@ class KombiPruefungWidget(QWidget):
         } | {"Alle Kategorien"})
         self.cbo_tierart_cat.addItems(tierart_categories)
         self.cbo_tierart_cat.setCurrentText("Alle Kategorien")
-
-        self.chk_artspezifisch = QCheckBox("Nur artspezifische")
-        self.chk_artspezifisch.setChecked(False)
 
         self.tbl = QTableWidget(1, 4)
         self.tbl.setHorizontalHeaderLabels(["E-Nummer", "Stoff", "Wert", "Einheit"])
@@ -841,9 +368,6 @@ class KombiPruefungWidget(QWidget):
         top.addWidget(self.cbo_species, 0, 3)
         top.addWidget(QLabel("Alter:"), 0, 4)
         top.addWidget(self.cbo_age, 0, 5)
-        top.addWidget(QLabel("Feed-Typ:"), 1, 0)
-        top.addWidget(self.cbo_feed, 1, 1)
-        top.addWidget(self.chk_artspezifisch, 1, 2, 1, 2)
 
         h = QHBoxLayout()
         h.addWidget(self.btn_add)
@@ -976,16 +500,11 @@ class KombiPruefungWidget(QWidget):
                 self._clear_combo(cb_s, self.idx["all_substances"])
                 return
 
-            sp = self.cbo_species.currentText()
-            age = self.age_map.get(self.cbo_age.currentText(), 0)
-            feed = None if self.cbo_feed.currentText() == "(kein Filter)" else self.cbo_feed.currentText()
-            tierart_cat = self.cbo_tierart_cat.currentText()
-            only_artspez = self.chk_artspezifisch.isChecked()
-
             recs = match_additive_records(
-                self.idx, e, sp, age, "", feed,
-                tierart_kategorie=tierart_cat,
-                only_artspezifisch=only_artspez
+                self.idx, e,
+                species=self.cbo_species.currentText(),
+                age_months=self.age_map.get(self.cbo_age.currentText(), 0),
+                tierart_kategorie=self.cbo_tierart_cat.currentText(),
             )
 
             if not recs:
@@ -1025,16 +544,12 @@ class KombiPruefungWidget(QWidget):
                 self._clear_combo(cb_s, self.idx["all_substances"])
                 return
 
-            sp = self.cbo_species.currentText()
-            age = self.age_map.get(self.cbo_age.currentText(), 0)
-            feed = None if self.cbo_feed.currentText() == "(kein Filter)" else self.cbo_feed.currentText()
-            tierart_cat = self.cbo_tierart_cat.currentText()
-            only_artspez = self.chk_artspezifisch.isChecked()
-
             recs = match_additive_records(
-                self.idx, "", sp, age, sub, feed,
-                tierart_kategorie=tierart_cat,
-                only_artspezifisch=only_artspez
+                self.idx, "",
+                species=self.cbo_species.currentText(),
+                age_months=self.age_map.get(self.cbo_age.currentText(), 0),
+                substance_query=sub,
+                tierart_kategorie=self.cbo_tierart_cat.currentText(),
             )
 
             if not recs:
@@ -1080,9 +595,7 @@ class KombiPruefungWidget(QWidget):
 
         sp = self.cbo_species.currentText()
         age = self.age_map.get(self.cbo_age.currentText(), 0)
-        feed = None if self.cbo_feed.currentText() == "(kein Filter)" else self.cbo_feed.currentText()
         tierart_cat = self.cbo_tierart_cat.currentText()
-        only_artspez = self.chk_artspezifisch.isChecked()
 
         html_blocks = []
         e_for_combo, val_for_combo = [], {}
@@ -1090,9 +603,11 @@ class KombiPruefungWidget(QWidget):
         for row in rows:
             e, sub, val, unit = row["e"], row["sub"], row["val"], row["unit"]
             recs = match_additive_records(
-                self.idx, e, sp, age, sub, feed,
+                self.idx, e,
+                species=sp,
+                age_months=age,
+                substance_query=sub,
                 tierart_kategorie=tierart_cat,
-                only_artspezifisch=only_artspez
             )
             header = f"{e} {sub}".strip()
 
@@ -1116,11 +631,13 @@ class KombiPruefungWidget(QWidget):
                 continue
 
             ok, lines = evaluate_single_value(val, recs[0])
-            color = "#2e7d32" if ok else "#c62828"
+            color = "#2e7d32" if ok is True else ("#f9a825" if ok is None else "#c62828")
             html_blocks.append(f'<b><span style="color:{color}">{header}</span></b><br>' +
                                "<br>".join(lines) + f"<br>Maßeinheit: {unit}")
-            e_for_combo.append(e)
-            val_for_combo[e] = val
+            # Only include in combo-rule totals when individual evaluation succeeded
+            if ok is not None:
+                e_for_combo.append(e)
+                val_for_combo[e] = val
 
         combo_rules = find_applicable_combo_rules(self.rules, e_for_combo, sp, self.idx["e_to_category"])
         if combo_rules:
@@ -1170,7 +687,7 @@ class KombiPruefungWidget(QWidget):
             elems = [
                 Paragraph("Laborauswertung Futtermittel-Zusatzstoffe (EG 1831/2003)", title),
                 Spacer(1, 10),
-                Paragraph(f"Tierart: {self.cbo_species.currentText()}  |  Alter: {self.cbo_age.currentText()}  |  Feed-Typ: {self.cbo_feed.currentText()}", small),
+                Paragraph(f"Tierart: {self.cbo_species.currentText()}  |  Alter: {self.cbo_age.currentText()}", small),
                 Spacer(1, 10),
                 Paragraph(self.out.toHtml(), small)
             ]
@@ -1392,6 +909,10 @@ def main():
     else:
         base_dir = os.path.dirname(os.path.abspath(__file__))
 
+    # Set up logging (file + console) as early as possible.
+    data_dir = os.path.join(base_dir, "Data")
+    setup_logging(os.path.join(data_dir, "laves_evaluation.log"))
+
     add_path = None
     for cand in [
         os.path.join(base_dir, "zusatzstoffe.json"),
@@ -1426,6 +947,14 @@ def main():
             combo_rules = load_combo_rules(cr_path)
         except Exception as e:
             QMessageBox.warning(None, "Warnung", f"Fehler beim Laden der Kombinationsregeln:\n{e}")
+
+    # Validate database at startup and write report next to the data file.
+    if additives:
+        report_dir = os.path.dirname(add_path) if add_path else data_dir
+        validate_database(
+            additives,
+            report_path=os.path.join(report_dir, "validation_report.txt"),
+        )
 
     win = MainWindow(additives, combo_rules, base_dir)
     win.show()
