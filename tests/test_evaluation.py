@@ -287,6 +287,68 @@ class TestMatchAdditiveRecords:
         assert len(results) == 1, "Should only find Schweine record"
         assert results[0].species == "Schweine"
 
+    def test_alle_tierarten_as_kategorie_returns_full_dataset(self):
+        """'Alle Tierarten' as tierart_kategorie must behave identically to 'Alle Kategorien'."""
+        rec1 = _make_additive(e_number="E7", species="Truthühner", max_value=5.0)
+        rec1.extra = {"tierart_kategorie": "Geflügel"}
+
+        rec2 = _make_additive(e_number="E7", species="Schweine", max_value=10.0)
+        rec2.extra = {"tierart_kategorie": "Schweine"}
+
+        idx = self._build([rec1, rec2])
+
+        results_alle_kategorien = match_additive_records(
+            idx, "E7", "Alle Tierarten", 0, tierart_kategorie="Alle Kategorien"
+        )
+        results_alle_tierarten = match_additive_records(
+            idx, "E7", "Alle Tierarten", 0, tierart_kategorie="Alle Tierarten"
+        )
+
+        assert len(results_alle_tierarten) == len(results_alle_kategorien), (
+            "'Alle Tierarten' and 'Alle Kategorien' must return the same number of records"
+        )
+        assert len(results_alle_tierarten) == 2, (
+            "Both 'Alle Tierarten' and 'Alle Kategorien' should return all records"
+        )
+
+    def test_cross_species_record_matches_specific_category(self):
+        """A record tagged tierart_kategorie='Alle Tierarten' must match any specific category filter."""
+        rec_all = _make_additive(e_number="E8", species="Alle Tierarten", max_value=20.0)
+        rec_all.extra = {"tierart_kategorie": "Alle Tierarten"}
+
+        rec_specific = _make_additive(e_number="E8", species="Schweine", max_value=10.0)
+        rec_specific.extra = {"tierart_kategorie": "Schweine"}
+
+        idx = self._build([rec_all, rec_specific])
+
+        # When filtering by "Schweine", the cross-species record must also be included
+        results = match_additive_records(
+            idx, "E8", "Alle Tierarten", 0, tierart_kategorie="Schweine"
+        )
+        assert len(results) == 2, (
+            "Record with tierart_kategorie='Alle Tierarten' must match the 'Schweine' category filter"
+        )
+
+    def test_alle_tierarten_kategorie_no_filter_applied(self):
+        """Selecting 'Alle Tierarten' as category must not exclude any record by category."""
+        rec1 = _make_additive(e_number="E9", species="Schweine", max_value=5.0)
+        rec1.extra = {"tierart_kategorie": "Schweine"}
+
+        rec2 = _make_additive(e_number="E9", species="Rinder", max_value=8.0)
+        rec2.extra = {"tierart_kategorie": "Rinder"}
+
+        rec3 = _make_additive(e_number="E9", species="Alle Tierarten", max_value=15.0)
+        rec3.extra = {"tierart_kategorie": "Alle Tierarten"}
+
+        idx = self._build([rec1, rec2, rec3])
+
+        results = match_additive_records(
+            idx, "E9", "Alle Tierarten", 0, tierart_kategorie="Alle Tierarten"
+        )
+        assert len(results) == 3, (
+            "'Alle Tierarten' as tierart_kategorie must return all records (no filtering)"
+        )
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # validate_database
