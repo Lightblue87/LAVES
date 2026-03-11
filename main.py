@@ -143,7 +143,7 @@ class EinzelpruefungWidget(QWidget):
 
     def on_tierart_cat_changed(self):
         category = self.cbo_tierart_cat.currentText()
-        if category == "Alle Kategorien":
+        if category in ("Alle Kategorien", "Alle Tierarten"):
             available_species = {"Alle Tierarten"}
             for additive in self.additives:
                 available_species.update(extract_individual_species(additive.species))
@@ -426,7 +426,7 @@ class KombiPruefungWidget(QWidget):
 
     def on_tierart_cat_changed(self):
         category = self.cbo_tierart_cat.currentText()
-        if category == "Alle Kategorien":
+        if category in ("Alle Kategorien", "Alle Tierarten"):
             available_species = {"Alle Tierarten"}
             for additive in self.additives:
                 available_species.update(extract_individual_species(additive.species))
