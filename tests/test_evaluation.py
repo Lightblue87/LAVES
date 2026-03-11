@@ -218,6 +218,75 @@ class TestMatchAdditiveRecords:
         results = match_additive_records(idx, "E4", "Alle Tierarten", 0)
         assert len(results) == 2
 
+    def test_truthuehner_species_keyword_matching(self):
+        """Truthühner species should match when keyword is present in species text."""
+        from laves_eval import extract_individual_species
+
+        # Test exact match
+        species = extract_individual_species("Truthühner")
+        assert "Truthühner" in species, "Truthühner should be extracted from exact text"
+
+        # Test keyword match (truthühn)
+        species = extract_individual_species("Masttruthühner")
+        assert "Truthühner" in species, "Truthühner should be extracted from Masttruthühner"
+
+    def test_geflugel_category_species_extraction(self):
+        """Test that species extraction works correctly for Geflügel category."""
+        from laves_eval import extract_individual_species
+
+        # Test keyword matching that works with current keywords
+        # Focus on the actual case we're fixing: Truthühner
+        test_cases = [
+            ("Legehennen", "Legehennen"),  # contains 'lege'
+            ("Masttruthühner", "Truthühner"),  # contains 'truthühn'
+            ("Enten", "Enten"),  # contains 'ente'
+            ("Hennen", "Hennen"),  # contains 'henne'
+        ]
+
+        for text, expected in test_cases:
+            species = extract_individual_species(text, category="Geflügel")
+            assert expected in species, f"Failed to extract {expected} from '{text}', got {species}"
+
+    def test_tierart_kategorie_filter_alle_kategorien(self):
+        """Test that 'Alle Kategorien' includes all records regardless of category."""
+        rec1 = _make_additive(e_number="E5", species="Truthühner", max_value=5.0)
+        rec1.extra = {"tierart_kategorie": "Geflügel", "tierart_spezifisch": True}
+
+        rec2 = _make_additive(e_number="E5", species="Schweine", max_value=10.0)
+        rec2.extra = {"tierart_kategorie": "Schweine", "tierart_spezifisch": True}
+
+        idx = self._build([rec1, rec2])
+
+        # With "Alle Kategorien" should find both
+        results = match_additive_records(
+            idx, "E5", "Alle Tierarten", 0, tierart_kategorie="Alle Kategorien"
+        )
+        assert len(results) == 2, "Alle Kategorien should include all categories"
+
+    def test_tierart_kategorie_filter_specific_category(self):
+        """Test that specific category filters correctly."""
+        rec1 = _make_additive(e_number="E6", species="Truthühner", max_value=5.0)
+        rec1.extra = {"tierart_kategorie": "Geflügel", "tierart_spezifisch": True}
+
+        rec2 = _make_additive(e_number="E6", species="Schweine", max_value=10.0)
+        rec2.extra = {"tierart_kategorie": "Schweine", "tierart_spezifisch": True}
+
+        idx = self._build([rec1, rec2])
+
+        # With "Geflügel" category should only find Geflügel record
+        results = match_additive_records(
+            idx, "E6", "Alle Tierarten", 0, tierart_kategorie="Geflügel"
+        )
+        assert len(results) == 1, "Should only find Geflügel record"
+        assert results[0].species == "Truthühner"
+
+        # With "Schweine" category should only find Schweine record
+        results = match_additive_records(
+            idx, "E6", "Alle Tierarten", 0, tierart_kategorie="Schweine"
+        )
+        assert len(results) == 1, "Should only find Schweine record"
+        assert results[0].species == "Schweine"
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # validate_database
