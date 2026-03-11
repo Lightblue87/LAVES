@@ -413,7 +413,7 @@ def match_additive_records(
         if feed_type and rec.feed_type_allowed and feed_type not in rec.feed_type_allowed:
             return False
         if tierart_kategorie and tierart_kategorie not in ("Alle Kategorien", "Alle Tierarten"):
-            rec_cat = rec.extra.get("tierart_kategorie")
+            rec_cat = rec.extra.get("tierart_kategorie") or "Alle Tierarten"
             if rec_cat != tierart_kategorie and rec_cat != "Alle Tierarten":
                 return False
         if only_artspezifisch and not rec.extra.get("tierart_spezifisch", False):

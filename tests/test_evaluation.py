@@ -349,6 +349,27 @@ class TestMatchAdditiveRecords:
             "'Alle Tierarten' as tierart_kategorie must return all records (no filtering)"
         )
 
+    def test_missing_tierart_kategorie_passes_specific_category_filter(self):
+        """Records with no tierart_kategorie field must not be excluded by a category filter."""
+        rec_no_cat = _make_additive(e_number="E10", species="Alle Tierarten", max_value=10.0)
+        rec_no_cat.extra = {}  # no tierart_kategorie at all
+
+        rec_empty_cat = _make_additive(e_number="E10", species="Schweine", max_value=20.0)
+        rec_empty_cat.extra = {"tierart_kategorie": None}  # explicitly None
+
+        rec_specific = _make_additive(e_number="E10", species="Geflügel", max_value=5.0)
+        rec_specific.extra = {"tierart_kategorie": "Geflügel"}
+
+        idx = self._build([rec_no_cat, rec_empty_cat, rec_specific])
+
+        # With "Geflügel" filter: the specific record and both incomplete-metadata records should match
+        results = match_additive_records(
+            idx, "E10", "Alle Tierarten", 0, tierart_kategorie="Geflügel"
+        )
+        assert len(results) == 3, (
+            "Records with missing or None tierart_kategorie must pass any specific category filter"
+        )
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # validate_database
