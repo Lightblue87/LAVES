@@ -1,0 +1,2 @@
+# This file ensures the _bvl_pdfs directory is tracked in git
+# PDF files placed in this directory will be ignored (see .gitignore)
