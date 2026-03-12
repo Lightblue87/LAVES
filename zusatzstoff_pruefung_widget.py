@@ -77,6 +77,10 @@ class ZusatzstoffPruefungWidget(QWidget):
         # ── Partiemenge ───────────────────────────────────────────────────
         self.txt_partie = QLineEdit()
         self.txt_partie.setPlaceholderText("Partiemenge (Zahl)")
+        self.txt_partie.setToolTip(
+            "Gesamtmenge der Futtermittelpartie.\n"
+            "Der Prozentanteil jedes Zusatzstoffs bezieht sich auf diese Gesamtmenge."
+        )
 
         self.cbo_partie_unit = QComboBox()
         self.cbo_partie_unit.addItems(["g", "kg", "t"])
@@ -112,7 +116,7 @@ class ZusatzstoffPruefungWidget(QWidget):
         # ── Zusatzstoff-Tabelle ───────────────────────────────────────────
         self.tbl = QTableWidget(1, 3)
         self.tbl.setHorizontalHeaderLabels(
-            ["Zulassungsnummer", "Stoffname", "Anteil in %"]
+            ["Zulassungsnummer", "Stoffname", "% der Gesamtpartie"]
         )
         self.tbl.horizontalHeader().setStretchLastSection(True)
         self.tbl.setColumnWidth(0, 160)
@@ -209,10 +213,12 @@ class ZusatzstoffPruefungWidget(QWidget):
         cb_e = _make_editable_combobox(self.idx["all_e_numbers"])
         cb_s = _make_editable_combobox(self.idx["all_substances"])
 
-        cb_e.currentTextChanged.connect(lambda _t, row=r: self._on_e_changed(row))
-        cb_e.activated.connect(lambda _i, row=r: self._on_e_changed(row))
-        cb_s.currentTextChanged.connect(lambda _t, row=r: self._on_s_changed(row))
-        cb_s.activated.connect(lambda _i, row=r: self._on_s_changed(row))
+        # Use widget reference rather than row index so that signal handlers
+        # remain correct after rows are deleted (row deletion shifts indices).
+        cb_e.currentTextChanged.connect(lambda _t, w=cb_e: self._on_e_changed(self._row_of(w)))
+        cb_e.activated.connect(lambda _i, w=cb_e: self._on_e_changed(self._row_of(w)))
+        cb_s.currentTextChanged.connect(lambda _t, w=cb_s: self._on_s_changed(self._row_of(w)))
+        cb_s.activated.connect(lambda _i, w=cb_s: self._on_s_changed(self._row_of(w)))
 
         self.tbl.setCellWidget(r, 0, cb_e)
         self.tbl.setCellWidget(r, 1, cb_s)
@@ -259,11 +265,24 @@ class ZusatzstoffPruefungWidget(QWidget):
     def _end_row(self, r: int):
         self._busy_rows.discard(r)
 
+    def _row_of(self, widget) -> int:
+        """Return the current table row for *widget*, or -1 if not found.
+
+        Using the widget reference (instead of a captured index) avoids the
+        stale-index problem that arises after row deletions shift all indices.
+        """
+        for r in range(self.tbl.rowCount()):
+            if self.tbl.cellWidget(r, 0) is widget or self.tbl.cellWidget(r, 1) is widget:
+                return r
+        return -1
+
     # ------------------------------------------------------------------
     # Autocomplete: E-Nummer ↔ Stoffname
     # ------------------------------------------------------------------
 
     def _on_e_changed(self, r: int):
+        if r < 0:
+            return
         if not self._begin_row(r):
             return
         try:
@@ -307,6 +326,8 @@ class ZusatzstoffPruefungWidget(QWidget):
             self._end_row(r)
 
     def _on_s_changed(self, r: int):
+        if r < 0:
+            return
         if not self._begin_row(r):
             return
         try:
@@ -391,7 +412,7 @@ class ZusatzstoffPruefungWidget(QWidget):
                 QMessageBox.warning(
                     self,
                     "Fehler",
-                    f"Zeile {r + 1}: Bitte Anteil in % eingeben.",
+                    f"Zeile {r + 1}: Bitte Anteil in % der Gesamtpartie eingeben.",
                 )
                 return
 
@@ -430,11 +451,12 @@ class ZusatzstoffPruefungWidget(QWidget):
             # Konzentration in mg/kg (= pct * 10_000, aber über Partiemenge gerechnet)
             konzentration_mg_kg = stoff_mg / partie_kg
 
-            mass_info = (
-                f"Anteil: {pct:g}% | "
-                f"Masse: {stoff_g:g} g ({stoff_kg:g} kg) | "
-                f"Konzentration: {konzentration_mg_kg:g} mg/kg"
-            )
+            # Detail-Zeilen die immer angezeigt werden
+            detail_prefix = [
+                f"Anteil an Gesamtpartie: {pct:g} %",
+                f"Masse in Partie: {stoff_g:g} g ({stoff_kg:g} kg)",
+                f"Berechnete Konzentration: {konzentration_mg_kg:g} mg/kg",
+            ]
 
             recs = match_additive_records(
                 self.idx,
@@ -463,38 +485,45 @@ class ZusatzstoffPruefungWidget(QWidget):
                     if rx.species and rx.species not in ("Alle Tierarten", sp)
                 })
                 species_txt = ", ".join(species_list) if species_list else "–"
+                lines_html = "<br>".join([
+                    *detail_prefix,
+                    f'Für die Tierart „{sp}" wurde kein passender Grenzwert gefunden.',
+                    f"Grenzwerte liegen vor für: {species_txt}",
+                ])
                 html_blocks.append(
                     f'<b><span style="color:#f9a825">⚠ {header}</span></b><br>'
-                    f'{mass_info}<br>'
-                    f'Für die Tierart „{sp}" wurde kein passender Grenzwert gefunden.<br>'
-                    f'Grenzwerte liegen vor für: {species_txt}'
+                    + lines_html
                 )
                 continue
 
             # Mehrdeutig
             if len(recs) > 1:
-                details = "<br>".join(
+                ambig = "<br>".join(
                     " ".join(filter(None, [r.e_number, r.substance]))
                     + f" → {format_range(r)}"
                     for r in recs
                 )
+                lines_html = "<br>".join([
+                    *detail_prefix,
+                    "Mehrdeutig – bitte Tierart / Alter / Zulassungsnummer genauer eingrenzen:",
+                    ambig,
+                ])
                 html_blocks.append(
-                    f'<b><span style="color:#f9a825">⚠ {header}: Mehrdeutig – '
-                    f'bitte genauer eingrenzen.</span></b><br>'
-                    f'{mass_info}<br>{details}'
+                    f'<b><span style="color:#f9a825">⚠ {header}</span></b><br>'
+                    + lines_html
                 )
                 continue
 
             # Grenzwertprüfung
-            ok, lines = evaluate_single_value(konzentration_mg_kg, recs[0])
+            ok, eval_lines = evaluate_single_value(konzentration_mg_kg, recs[0])
             color = (
                 "#2e7d32" if ok is True
                 else ("#f9a825" if ok is None else "#c62828")
             )
+            lines_html = "<br>".join([*detail_prefix, *eval_lines])
             html_blocks.append(
                 f'<b><span style="color:{color}">{header}</span></b><br>'
-                f'{mass_info}<br>'
-                + "<br>".join(lines)
+                + lines_html
             )
 
         self.out.setHtml("<br><hr><br>".join(html_blocks))
