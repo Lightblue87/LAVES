@@ -7,9 +7,9 @@ from typing import Optional, List, Dict, Any
 
 from PySide6.QtCore import Qt, QProcess
 from PySide6.QtWidgets import (
-    QApplication, QComboBox, QCompleter, QFormLayout, QGridLayout, QHBoxLayout, QLabel,
-    QLineEdit, QMainWindow, QMessageBox, QPushButton, QVBoxLayout, QWidget, QTabWidget,
-    QTableWidget, QTableWidgetItem, QTextEdit, QFileDialog
+    QApplication, QComboBox, QCompleter, QFormLayout, QHBoxLayout, QLabel,
+    QLineEdit, QMainWindow, QMessageBox, QPushButton, QTabWidget, QTextEdit,
+    QVBoxLayout, QWidget,
 )
 from PySide6.QtGui import QPalette, QColor, QFont
 from PySide6.QtWidgets import QStyleFactory
@@ -17,19 +17,18 @@ from PySide6.QtWidgets import QStyleFactory
 # Pure evaluation logic lives in laves_eval – no Qt dependency there.
 from laves_eval import (
     Additive,
-    ComboRule,
     load_additives,
-    load_combo_rules,
     build_indexes,
     extract_individual_species,
     match_additive_records,
     derive_e_number_for_substance,
     format_range,
     evaluate_single_value,
-    find_applicable_combo_rules,
     validate_database,
     setup_logging,
 )
+
+from zusatzstoff_pruefung_widget import ZusatzstoffPruefungWidget
 
 # =========================================================
 # UI Hilfsfunktionen
@@ -317,402 +316,14 @@ class EinzelpruefungWidget(QWidget):
         self._set_out("\n".join(lines), ok=ok)
 
 # =========================================================
-# Kombinationsprüfung
-# =========================================================
-
-class KombiPruefungWidget(QWidget):
-    def __init__(self, additives: List[Additive], idx: Dict[str, Any], rules: List[ComboRule]):
-        super().__init__()
-        self.additives, self.idx, self.rules = additives, idx, rules
-        self._busy_rows: set[int] = set()
-
-        self.cbo_species = QComboBox()
-        all_species = {"Alle Tierarten"}
-        for a in additives:
-            all_species.update(extract_individual_species(a.species))
-        self.cbo_species.addItems(sorted(all_species))
-        self.cbo_species.setCurrentText("Alle Tierarten")
-
-        self.cbo_age = QComboBox()
-        self.age_map = {"Kein Altersfilter": 0}
-        for m in idx["age_options"]:
-            self.age_map[f"≤ {m} Monate"] = int(m)
-        self.cbo_age.addItems(self.age_map.keys())
-        self.cbo_age.setCurrentText("Kein Altersfilter")
-
-        self.cbo_tierart_cat = QComboBox()
-        tierart_categories = sorted({
-            a.extra.get("tierart_kategorie")
-            for a in additives
-            if a.extra.get("tierart_kategorie")
-        } | {"Alle Kategorien"})
-        self.cbo_tierart_cat.addItems(tierart_categories)
-        self.cbo_tierart_cat.setCurrentText("Alle Kategorien")
-
-        self.tbl = QTableWidget(1, 4)
-        self.tbl.setHorizontalHeaderLabels(["E-Nummer", "Stoff", "Wert", "Einheit"])
-        self.tbl.horizontalHeader().setStretchLastSection(True)
-
-        self.btn_add = QPushButton("+ Zeile")
-        self.btn_add.clicked.connect(self.add_row)
-        self.btn_del = QPushButton("– Zeile")
-        self.btn_del.clicked.connect(self.delete_row)
-        self.btn_check = QPushButton("Kombination prüfen")
-        self.btn_check.clicked.connect(self.on_check)
-        self.btn_export = QPushButton("Bericht exportieren…")
-        self.btn_export.setEnabled(False)
-        self.btn_export.clicked.connect(self.export_pdf)
-
-        self.out = QTextEdit()
-        self.out.setReadOnly(True)
-        self.out.setMinimumHeight(240)
-
-        top = QGridLayout()
-        top.addWidget(QLabel("Tierart-Kat.:"), 0, 0)
-        top.addWidget(self.cbo_tierart_cat, 0, 1)
-        top.addWidget(QLabel("Tierart:"), 0, 2)
-        top.addWidget(self.cbo_species, 0, 3)
-        top.addWidget(QLabel("Alter:"), 0, 4)
-        top.addWidget(self.cbo_age, 0, 5)
-
-        h = QHBoxLayout()
-        h.addWidget(self.btn_add)
-        h.addWidget(self.btn_del)
-        h.addStretch(1)
-        h.addWidget(self.btn_check)
-
-        v = QVBoxLayout()
-        v.addLayout(top)
-        v.addWidget(self.tbl)
-        v.addLayout(h)
-        v.addWidget(QLabel("Auswertung:"))
-        v.addWidget(self.out)
-        h2 = QHBoxLayout()
-        h2.addStretch(1)
-        h2.addWidget(self.btn_export)
-        v.addLayout(h2)
-        self.setLayout(v)
-
-        self.cbo_tierart_cat.currentTextChanged.connect(self.on_tierart_cat_changed)
-
-        for r in range(self.tbl.rowCount()):
-            self._setup_row(r)
-
-        self._last_report = None
-
-    def _refill(self, cb: QComboBox, items: List[str], set_text: Optional[str] = None):
-        cb.blockSignals(True)
-        cb.clear()
-        cb.addItems(items)
-        comp = QCompleter(items)
-        comp.setCaseSensitivity(Qt.CaseInsensitive)
-        comp.setFilterMode(Qt.MatchContains)
-        cb.setCompleter(comp)
-        if set_text is not None:
-            cb.setEditText(set_text)
-        cb.blockSignals(False)
-
-    def _set_text(self, cb: QComboBox, text: str):
-        cb.blockSignals(True)
-        cb.setEditText(text)
-        cb.blockSignals(False)
-
-    def _clear_combo(self, cb: QComboBox, all_items: List[str]):
-        self._refill(cb, all_items, set_text="")
-        cb.setCurrentIndex(-1)
-
-    def _begin_row(self, r: int) -> bool:
-        if r in self._busy_rows:
-            return False
-        self._busy_rows.add(r)
-        return True
-
-    def _end_row(self, r: int):
-        self._busy_rows.discard(r)
-
-    def on_tierart_cat_changed(self):
-        category = self.cbo_tierart_cat.currentText()
-        if category in ("Alle Kategorien", "Alle Tierarten"):
-            available_species = {"Alle Tierarten"}
-            for additive in self.additives:
-                available_species.update(extract_individual_species(additive.species))
-            available_species = sorted(available_species)
-        else:
-            available_species = {"Alle Tierarten"}
-            for additive in self.additives:
-                if additive.extra.get("tierart_kategorie") == category:
-                    available_species.update(
-                        extract_individual_species(additive.species, category=category)
-                    )
-            available_species = sorted(available_species)
-
-        self.cbo_species.blockSignals(True)
-        current_text = self.cbo_species.currentText()
-        self.cbo_species.clear()
-        self.cbo_species.addItems(available_species)
-        if current_text in available_species:
-            self.cbo_species.setCurrentText(current_text)
-        elif available_species:
-            self.cbo_species.setCurrentIndex(0)
-        self.cbo_species.blockSignals(False)
-
-    def _setup_row(self, r):
-        cb_e = make_editable_combobox(self.idx["all_e_numbers"])
-        cb_s = make_editable_combobox(self.idx["all_substances"])
-        cb_u = QComboBox()
-        cb_u.addItems(self.idx.get("all_units", ["mg/kg"]))
-
-        cb_e.currentTextChanged.connect(lambda _t, row=r: self._on_e_changed(row))
-        cb_e.activated.connect(lambda _i, row=r: self._on_e_changed(row))
-        cb_s.currentTextChanged.connect(lambda _t, row=r: self._on_s_changed(row))
-        cb_s.activated.connect(lambda _i, row=r: self._on_s_changed(row))
-
-        self.tbl.setCellWidget(r, 0, cb_e)
-        self.tbl.setCellWidget(r, 1, cb_s)
-        self.tbl.setItem(r, 2, QTableWidgetItem(""))
-        self.tbl.setCellWidget(r, 3, cb_u)
-
-        self._clear_combo(cb_e, self.idx["all_e_numbers"])
-        self._clear_combo(cb_s, self.idx["all_substances"])
-
-    def add_row(self):
-        r = self.tbl.rowCount()
-        self.tbl.insertRow(r)
-        self._setup_row(r)
-
-    def delete_row(self):
-        row = self.tbl.currentRow()
-        if row < 0:
-            QMessageBox.information(self, "Hinweis", "Bitte eine Zeile markieren.")
-            return
-        self.tbl.removeRow(row)
-
-    def keyPressEvent(self, event):
-        if event.key() in (Qt.Key_Delete, Qt.Key_Backspace):
-            self.delete_row()
-        else:
-            super().keyPressEvent(event)
-
-    def _on_e_changed(self, r):
-        if not self._begin_row(r):
-            return
-        try:
-            cb_e = self.tbl.cellWidget(r, 0)
-            cb_s = self.tbl.cellWidget(r, 1)
-            cb_u = self.tbl.cellWidget(r, 3)
-            e = (cb_e.currentText() or "").strip().upper()
-
-            if not e:
-                self._clear_combo(cb_s, self.idx["all_substances"])
-                return
-
-            recs = match_additive_records(
-                self.idx, e,
-                species=self.cbo_species.currentText(),
-                age_months=self.age_map.get(self.cbo_age.currentText(), 0),
-                tierart_kategorie=self.cbo_tierart_cat.currentText(),
-            )
-
-            if not recs:
-                subs_global = self.idx["e_to_all_substances"].get(e, [])
-                if subs_global:
-                    self._refill(cb_s, subs_global, set_text=(subs_global[0] if len(subs_global) == 1 else ""))
-                else:
-                    self._clear_combo(cb_s, self.idx["all_substances"])
-                return
-
-            subs = sorted({(x.substance or "").strip() for x in recs if x.substance})
-            if subs:
-                self._refill(cb_s, subs, set_text=(subs[0] if len(subs) == 1 else ""))
-            else:
-                subs_global = self.idx["e_to_all_substances"].get(e, [])
-                if subs_global:
-                    self._refill(cb_s, subs_global, set_text=(subs_global[0] if len(subs_global) == 1 else ""))
-                else:
-                    self._clear_combo(cb_s, self.idx["all_substances"])
-
-            if len(recs) == 1 and recs[0].unit:
-                cb_u.setCurrentText(recs[0].unit)
-        finally:
-            self._end_row(r)
-
-    def _on_s_changed(self, r):
-        if not self._begin_row(r):
-            return
-        try:
-            cb_e = self.tbl.cellWidget(r, 0)
-            cb_s = self.tbl.cellWidget(r, 1)
-            sub = (cb_s.currentText() or "").strip()
-
-            if not sub:
-                self._set_text(cb_e, "")
-                cb_e.setCurrentIndex(-1)
-                self._clear_combo(cb_s, self.idx["all_substances"])
-                return
-
-            e_number = derive_e_number_for_substance(
-                self.idx, sub,
-                species=self.cbo_species.currentText(),
-                age_months=self.age_map.get(self.cbo_age.currentText(), 0),
-                tierart_kategorie=self.cbo_tierart_cat.currentText(),
-            )
-            if e_number:
-                self._set_text(cb_e, e_number)
-        finally:
-            self._end_row(r)
-
-    def on_check(self):
-        rows = []
-        for r in range(self.tbl.rowCount()):
-            cb_e = self.tbl.cellWidget(r, 0)
-            cb_s = self.tbl.cellWidget(r, 1)
-            v_item = self.tbl.item(r, 2)
-            cb_u = self.tbl.cellWidget(r, 3)
-            if not cb_e or not v_item:
-                continue
-            e = (cb_e.currentText() or "").strip().upper()
-            sub_cell = (cb_s.currentText() or "").strip()
-            if not e and not sub_cell:
-                continue
-            try:
-                val = float((v_item.text() or "").replace(",", "."))
-            except Exception:
-                QMessageBox.warning(self, "Fehler", f"Ungültiger Wert in Zeile {r+1}")
-                return
-            rows.append({
-                "row": r + 1,
-                "e": e,
-                "sub": sub_cell,
-                "val": val,
-                "unit": cb_u.currentText().strip()
-            })
-
-        if not rows:
-            self.out.setHtml("<i>Keine Eingaben.</i>")
-            return
-
-        sp = self.cbo_species.currentText()
-        age = self.age_map.get(self.cbo_age.currentText(), 0)
-        tierart_cat = self.cbo_tierart_cat.currentText()
-
-        html_blocks = []
-        e_for_combo, val_for_combo = [], {}
-
-        for row in rows:
-            e, sub, val, unit = row["e"], row["sub"], row["val"], row["unit"]
-            recs = match_additive_records(
-                self.idx, e,
-                species=sp,
-                age_months=age,
-                substance_query=sub,
-                tierart_kategorie=tierart_cat,
-            )
-            header = (f"{e} {sub}".strip()) if e else sub
-
-            if not recs:
-                if e:
-                    all_recs = [a for a in self.additives if (a.e_number or "").upper() == e]
-                else:
-                    all_recs = [
-                        a for a in self.additives
-                        if sub.casefold() == (a.substance or "").casefold()
-                    ]
-                species_list = sorted({
-                    r.species for r in all_recs
-                    if r.species and r.species not in ("Alle Tierarten", sp)
-                })
-                species_txt = ", ".join(species_list) if species_list else "–"
-                html_blocks.append(
-                    f'<b><span style="color:#f9a825">⚠ {header}: '
-                    f'Für die Tierart „{sp}“ existiert kein Grenzwert.<br>'
-                    f'Grenzwerte liegen vor für: {species_txt}</span></b>'
-                )
-                continue
-
-            if len(recs) > 1:
-                msg = "<br>".join([
-                    " ".join(filter(None, [r.e_number, r.substance])) + f" → {format_range(r)}"
-                    for r in recs
-                ])
-                html_blocks.append(f'<b><span style="color:#c62828">{header}: Mehrdeutig.</span></b><br>{msg}')
-                continue
-
-            ok, lines = evaluate_single_value(val, recs[0])
-            color = "#2e7d32" if ok is True else ("#f9a825" if ok is None else "#c62828")
-            html_blocks.append(f'<b><span style="color:{color}">{header}</span></b><br>' +
-                               "<br>".join(lines) + f"<br>Maßeinheit: {unit}")
-            # Only include in combo-rule totals when individual evaluation succeeded
-            if ok is not None:
-                e_for_combo.append(e)
-                val_for_combo[e] = val
-
-        combo_rules = find_applicable_combo_rules(self.rules, e_for_combo, sp, self.idx["e_to_category"])
-        if combo_rules:
-            html_blocks.append("<hr><b>Kombinationsregeln:</b>")
-            for rule in combo_rules:
-                sum_val, contributors = 0.0, []
-                for e in e_for_combo:
-                    if rule.affected_e_numbers and e in [x.upper() for x in rule.affected_e_numbers]:
-                        sum_val += val_for_combo.get(e, 0)
-                        contributors.append(e)
-                ok = sum_val <= rule.max_total_value + 1e-12
-                color = "#2e7d32" if ok else "#c62828"
-                html_blocks.append(
-                    f'<b><span style="color:{color}">{("KONFORM" if ok else "NICHT konform")} – Regel {rule.rule_id}</span></b><br>'
-                    f"{rule.description}<br>"
-                    f"Summe ({', '.join(contributors)}) = {sum_val:g} {rule.unit} "
-                    f"(Grenze ≤ {rule.max_total_value:g} {rule.unit})"
-                )
-        else:
-            html_blocks.append("<hr><i>Keine Kombinationsregel gefunden.</i>")
-
-        self.out.setHtml("<br>".join(html_blocks))
-        self.btn_export.setEnabled(True)
-
-    def export_pdf(self):
-        if not self.out.toPlainText().strip():
-            return
-        try:
-            from reportlab.lib.pagesizes import A4
-            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-        except ImportError:
-            QMessageBox.warning(
-                self, "Fehlende Bibliothek",
-                "Das Paket 'reportlab' ist nicht installiert.\n"
-                "Bitte installieren Sie es mit:\n\n  pip install reportlab"
-            )
-            return
-        path, _ = QFileDialog.getSaveFileName(self, "Bericht speichern", "Auswertung.pdf", "PDF Dateien (*.pdf)")
-        if not path:
-            return
-        try:
-            doc = SimpleDocTemplate(path, pagesize=A4, leftMargin=40, rightMargin=40, topMargin=60, bottomMargin=40)
-            styles = getSampleStyleSheet()
-            title = ParagraphStyle("title", parent=styles["Heading1"], alignment=1)
-            small = ParagraphStyle("small", parent=styles["Normal"], fontSize=9)
-            elems = [
-                Paragraph("Laborauswertung Futtermittel-Zusatzstoffe (EG 1831/2003)", title),
-                Spacer(1, 10),
-                Paragraph(f"Tierart: {self.cbo_species.currentText()}  |  Alter: {self.cbo_age.currentText()}", small),
-                Spacer(1, 10),
-                Paragraph(self.out.toHtml(), small)
-            ]
-            doc.build(elems)
-            QMessageBox.information(self, "Export", f"PDF gespeichert:\n{path}")
-        except Exception as e:
-            QMessageBox.critical(self, "Export fehlgeschlagen", f"Fehler beim Erstellen der PDF:\n{e}")
-
-# =========================================================
 # Hauptfenster mit Empty-View & Auto-Reload
 # =========================================================
 
 class MainWindow(QMainWindow):
-    def __init__(self, additives: List[Additive], combo_rules: List[ComboRule], base_dir: str):
+    def __init__(self, additives: List[Additive], base_dir: str):
         super().__init__()
-        self.additives   = additives
-        self.combo_rules = combo_rules
-        self.base_dir    = base_dir
+        self.additives = additives
+        self.base_dir  = base_dir
         self._toast_proc: Optional[QProcess] = None
 
         self.setWindowTitle("LAVES Laborauswertung – Zusatzstoffe (EG 1831/2003)")
@@ -738,17 +349,7 @@ class MainWindow(QMainWindow):
         if has_data:
             idx = build_indexes(self.additives)
             tabs.addTab(EinzelpruefungWidget(self.additives, idx), "Einzelprüfung")
-            tabs.addTab(KombiPruefungWidget(self.additives, idx, self.combo_rules), "Kombinationsprüfung")
-
-            try:
-                combo_tab = tabs.widget(1)
-                if hasattr(combo_tab, 'tbl'):
-                    combo_tab.tbl.setColumnWidth(0, 110)
-                    combo_tab.tbl.setColumnWidth(1, 340)
-                    combo_tab.tbl.setColumnWidth(2, 120)
-                    combo_tab.tbl.setColumnWidth(3, 140)
-            except Exception:
-                pass
+            tabs.addTab(ZusatzstoffPruefungWidget(self.additives, idx), "Zusatzstoffprüfung")
 
         else:
             empty_widget = QWidget()
@@ -842,16 +443,6 @@ class MainWindow(QMainWindow):
                 add_path = cand
                 break
 
-        cr_path = None
-        for cand in [
-            os.path.join(base, "kombiregeln.json"),
-            os.path.join(base, "Data", "kombiregeln.json"),
-            os.path.join(base, "data", "kombiregeln.json"),
-        ]:
-            if os.path.isfile(cand):
-                cr_path = cand
-                break
-
         new_additives = []
         if add_path:
             try:
@@ -859,15 +450,7 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 QMessageBox.warning(self, "Ladefehler", f"Zusatzstoffe:\n{e}")
 
-        new_combo_rules = []
-        if cr_path:
-            try:
-                new_combo_rules = load_combo_rules(cr_path)
-            except Exception as e:
-                QMessageBox.warning(self, "Ladefehler", f"Kombinationsregeln:\n{e}")
-
-        self.additives   = new_additives
-        self.combo_rules = new_combo_rules
+        self.additives = new_additives
 
         self._build_tabs()
 
@@ -930,30 +513,13 @@ def main():
             add_path = cand
             break
 
-    cr_path = None
-    for cand in [
-        os.path.join(base_dir, "kombiregeln.json"),
-        os.path.join(base_dir, "Data", "kombiregeln.json"),
-        os.path.join(base_dir, "data", "kombiregeln.json"),
-    ]:
-        if os.path.isfile(cand):
-            cr_path = cand
-            break
-
     additives = []
-    combo_rules = []
 
     if add_path:
         try:
             additives = load_additives(add_path)
         except Exception as e:
             QMessageBox.warning(None, "Warnung", f"Fehler beim Laden der Zusatzstoffe:\n{e}")
-
-    if cr_path:
-        try:
-            combo_rules = load_combo_rules(cr_path)
-        except Exception as e:
-            QMessageBox.warning(None, "Warnung", f"Fehler beim Laden der Kombinationsregeln:\n{e}")
 
     # Validate database at startup and write report next to the data file.
     if additives:
@@ -963,7 +529,7 @@ def main():
             report_path=os.path.join(report_dir, "validation_report.txt"),
         )
 
-    win = MainWindow(additives, combo_rules, base_dir)
+    win = MainWindow(additives, base_dir)
     win.show()
 
     sys.exit(app.exec())
