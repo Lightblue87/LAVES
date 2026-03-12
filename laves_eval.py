@@ -808,7 +808,7 @@ def evaluate_single_value(
     if has_max and value > rec.max_value:
         ok = False
         msgs.append(
-            f"Überschreitung: {value:g} {unit} > {rec.max_value:g} {unit}"
+            f"<b>Überschreitung: {value:g} {unit} > {rec.max_value:g} {unit}</b>"
         )
 
     if ok:
