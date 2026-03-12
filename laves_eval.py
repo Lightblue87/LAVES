@@ -473,6 +473,40 @@ def match_additive_records(
     return []
 
 
+def derive_e_number_for_substance(
+    idx: Dict[str, Any],
+    substance: str,
+    species: str = "Alle Tierarten",
+    age_months: int = 0,
+    tierart_kategorie: Optional[str] = None,
+) -> Optional[str]:
+    """Return the unique E-number for *substance*, or ``None``.
+
+    The function first resolves the substance via
+    :func:`match_additive_records`.  If any records are found it
+    collects the set of distinct E-numbers from those records.  As a
+    fallback (e.g. when all records are filtered out by species / age
+    constraints) it consults the ``sub_to_all_e_numbers`` index which
+    is species-agnostic.
+
+    Returns the single E-number string when it can be derived
+    unambiguously, ``None`` when the substance has no E-number or when
+    it maps to more than one distinct E-number.
+    """
+    recs = match_additive_records(
+        idx, "",
+        species=species,
+        age_months=age_months,
+        substance_query=substance,
+        tierart_kategorie=tierart_kategorie,
+    )
+    if recs:
+        e_set = {r.e_number.upper() for r in recs if r.e_number}
+    else:
+        e_set = set(idx["sub_to_all_e_numbers"].get(substance.lower(), []))
+    return next(iter(e_set)) if len(e_set) == 1 else None
+
+
 # =========================================================
 # Evaluation
 # =========================================================
