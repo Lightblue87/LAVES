@@ -23,6 +23,7 @@ from laves_eval import (
     build_indexes,
     extract_individual_species,
     match_additive_records,
+    derive_e_number_for_substance,
     format_range,
     evaluate_single_value,
     find_applicable_combo_rules,
@@ -247,30 +248,25 @@ class EinzelpruefungWidget(QWidget):
                 self.cbo_e.setEditText("")
                 return
 
-            recs = match_additive_records(
-                self.idx, "",
+            e_number = derive_e_number_for_substance(
+                self.idx, sub,
                 species=self.cbo_species.currentText(),
                 age_months=self.current_age(),
-                substance_query=sub,
                 tierart_kategorie=self.cbo_tierart_cat.currentText(),
             )
-            if not recs:
-                e_list = self.idx["sub_to_all_e_numbers"].get(sub.lower(), [])
-            else:
-                e_list = sorted({r.e_number.upper() for r in recs if r.e_number})
-
-            if len(e_list) == 1:
-                self.cbo_e.setEditText(e_list[0])
+            if e_number:
+                self.cbo_e.setEditText(e_number)
         finally:
             self._syncing = False
 
     def on_check(self):
         e_input = self.cbo_e.currentText().strip()
-        if not e_input:
-            QMessageBox.warning(self, "Fehler", "Bitte E-Nummer eingeben.")
+        sub = self.cbo_sub.currentText().strip()
+
+        if not e_input and not sub:
+            QMessageBox.warning(self, "Fehler", "Bitte E-Nummer oder Stoff eingeben.")
             return
 
-        e = e_input.upper()
         try:
             val = float(self.txt_value.text().replace(",", "."))
         except Exception:
@@ -278,7 +274,7 @@ class EinzelpruefungWidget(QWidget):
             return
 
         sp = self.cbo_species.currentText()
-        sub = self.cbo_sub.currentText().strip()
+        e = e_input.upper()
 
         recs = match_additive_records(
             self.idx, e,
@@ -289,21 +285,31 @@ class EinzelpruefungWidget(QWidget):
         )
 
         if not recs:
-            all_recs = [a for a in self.additives if (a.e_number or "").upper() == e]
+            if e:
+                all_recs = [a for a in self.additives if (a.e_number or "").upper() == e]
+            else:
+                all_recs = [
+                    a for a in self.additives
+                    if sub.casefold() == (a.substance or "").casefold()
+                ]
             species_list = sorted({
                 r.species for r in all_recs
                 if r.species and r.species not in ("Alle Tierarten", sp)
             })
             species_txt = ", ".join(species_list) if species_list else "–"
+            identifier = e or sub
             hint = (
-                f"⚠ Für die Tierart „{sp}“ existiert kein Eintrag für {e}."
+                f"⚠ Für die Tierart „{sp}“ existiert kein Eintrag für {identifier}."
                 f"<br>Grenzwerte liegen vor für: {species_txt}"
             )
             self._set_out(hint, ok=None)
             return
 
         if len(recs) > 1:
-            msg = "<br>".join([f"{r.e_number} {r.substance or ''} → {format_range(r)}" for r in recs])
+            msg = "<br>".join([
+                " ".join(filter(None, [r.e_number, r.substance])) + f" → {format_range(r)}"
+                for r in recs
+            ])
             self._set_out("Mehrdeutig – bitte genauer eingrenzen.<br>" + msg, ok=None)
             return
 
@@ -544,23 +550,14 @@ class KombiPruefungWidget(QWidget):
                 self._clear_combo(cb_s, self.idx["all_substances"])
                 return
 
-            recs = match_additive_records(
-                self.idx, "",
+            e_number = derive_e_number_for_substance(
+                self.idx, sub,
                 species=self.cbo_species.currentText(),
                 age_months=self.age_map.get(self.cbo_age.currentText(), 0),
-                substance_query=sub,
                 tierart_kategorie=self.cbo_tierart_cat.currentText(),
             )
-
-            if not recs:
-                e_list = self.idx["sub_to_all_e_numbers"].get(sub.lower(), [])
-                if len(e_list) == 1:
-                    self._set_text(cb_e, e_list[0])
-                return
-
-            e_list = sorted({x.e_number.upper() for x in recs if x.e_number})
-            if len(e_list) == 1:
-                self._set_text(cb_e, e_list[0])
+            if e_number:
+                self._set_text(cb_e, e_number)
         finally:
             self._end_row(r)
 
@@ -574,7 +571,8 @@ class KombiPruefungWidget(QWidget):
             if not cb_e or not v_item:
                 continue
             e = (cb_e.currentText() or "").strip().upper()
-            if not e:
+            sub_cell = (cb_s.currentText() or "").strip()
+            if not e and not sub_cell:
                 continue
             try:
                 val = float((v_item.text() or "").replace(",", "."))
@@ -584,7 +582,7 @@ class KombiPruefungWidget(QWidget):
             rows.append({
                 "row": r + 1,
                 "e": e,
-                "sub": (cb_s.currentText() or "").strip(),
+                "sub": sub_cell,
                 "val": val,
                 "unit": cb_u.currentText().strip()
             })
@@ -609,10 +607,16 @@ class KombiPruefungWidget(QWidget):
                 substance_query=sub,
                 tierart_kategorie=tierart_cat,
             )
-            header = f"{e} {sub}".strip()
+            header = (f"{e} {sub}".strip()) if e else sub
 
             if not recs:
-                all_recs = [a for a in self.additives if (a.e_number or "").upper() == e]
+                if e:
+                    all_recs = [a for a in self.additives if (a.e_number or "").upper() == e]
+                else:
+                    all_recs = [
+                        a for a in self.additives
+                        if sub.casefold() == (a.substance or "").casefold()
+                    ]
                 species_list = sorted({
                     r.species for r in all_recs
                     if r.species and r.species not in ("Alle Tierarten", sp)
@@ -626,7 +630,10 @@ class KombiPruefungWidget(QWidget):
                 continue
 
             if len(recs) > 1:
-                msg = "<br>".join([f"{r.e_number} {r.substance or ''} → {format_range(r)}" for r in recs])
+                msg = "<br>".join([
+                    " ".join(filter(None, [r.e_number, r.substance])) + f" → {format_range(r)}"
+                    for r in recs
+                ])
                 html_blocks.append(f'<b><span style="color:#c62828">{header}: Mehrdeutig.</span></b><br>{msg}')
                 continue
 
