@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -93,6 +94,204 @@ class ComboRule:
     source_refs: Optional[List[str]] = None
     confidence: Optional[str] = None
     extra: Dict[str, Any] = field(default_factory=dict)
+
+
+# =========================================================
+# Substance-name normalization & synonym helpers
+# =========================================================
+
+# Matches element/symbol prefixes used in older regulatory entries, e.g.:
+#   "Selen-Se Natriumselenit*"  →  requires the "-Symbol" part (e.g. -Se, -Fe)
+#   "Eisen -Fe Eisencarbonat*"  →  space before hyphen is allowed
+# The -Symbol part is MANDATORY so that ordinary German words that happen to
+# start with a capital letter (e.g. "Flüssige", "Organische") are NOT stripped.
+_ELEM_PREFIX_RE = re.compile(
+    r"^[A-ZÄÖÜ][a-zäöüß]+"   # German element name (capital + lowercase)
+    r"\s*-[A-Z][a-z]{0,2}"    # required -Symbol  (e.g. -Se, -Fe, -J, -Cu)
+    r"\s+"                     # trailing whitespace before substance name
+)
+
+# Matches leading Roman-numeral annotations like "(i)* ", "(ii)* ", "(iii)* "
+_ANNOT_PREFIX_RE = re.compile(r"^\([ivxIVX]+\)\*?\s*")
+
+
+def normalize_substance_name(name: str) -> str:
+    """Return a canonical lowercase key for *name*.
+
+    Handles:
+
+    * trailing ``*`` characters (e.g. ``Natriumselenit*``)
+    * leading element/symbol prefixes such as ``Selen-Se``, ``Eisen -Fe``
+      that appear in older regulatory entries
+    * leading Roman-numeral annotation prefixes like ``(i)*``, ``(ii)*``
+    * extra surrounding whitespace
+
+    The returned key is used to detect that substance names which differ only
+    in historical notation (element prefix, trailing asterisk, annotation) are
+    really the same canonical additive.
+
+    Examples::
+
+        normalize_substance_name("Natriumselenit")            == "natriumselenit"
+        normalize_substance_name("Selen-Se Natriumselenit*")  == "natriumselenit"
+        normalize_substance_name("Eisen -Fe Eisencarbonat*")  == "eisencarbonat"
+        normalize_substance_name("(i)* Kaliumdihydrogen-orthophosphat")
+            == "kaliumdihydrogen-orthophosphat"
+    """
+    if not name:
+        return ""
+    s = name.strip()
+    # Remove trailing asterisk(s)
+    s = s.rstrip("*").rstrip()
+    # Remove leading annotations: (i)*, (ii)*, (iii)*, …
+    s = _ANNOT_PREFIX_RE.sub("", s)
+    # Remove leading element/symbol prefix, e.g. "Selen-Se ", "Eisen -Fe "
+    s = _ELEM_PREFIX_RE.sub("", s)
+    # Second pass: remove any stray trailing asterisk uncovered after prefix removal
+    s = s.rstrip("*").rstrip()
+    return s.lower()
+
+
+def _dedup_species_key(species: str) -> str:
+    """Return a normalised species key for synonym-grouping purposes.
+
+    Species strings in the historical dataset sometimes contain 'Alle Tierarten'
+    as part of a larger multi-line value (e.g. ``"Tierkategorien\\nAlle Tierarten
+    oder"``), or use the standalone label ``"Tierkategorien"`` (the column
+    heading from older regulatory tables, meaning *all species categories*).
+    Both are treated as equivalent to the clean ``"Alle Tierarten"`` key so
+    that historical duplicate records are properly collapsed with their modern
+    counterparts.
+    """
+    if not species:
+        return ""
+    s_lower = species.strip().lower()
+    if "alle tierarten" in s_lower:
+        return "Alle Tierarten"
+    # "Tierkategorien" alone (possibly with whitespace/newlines) is the
+    # historical dataset's catch-all label equivalent to "Alle Tierarten".
+    if s_lower in ("tierkategorien", "alle tierkategorien"):
+        return "Alle Tierarten"
+    return species
+
+
+def _pick_primary_record(records: List[Additive]) -> Additive:
+    """From a list of synonymous *records*, return the most informative one.
+
+    Preference order:
+
+    1. Records that have at least one limit value (``min_value`` or
+       ``max_value`` is not ``None``).
+    2. Among those (or all records when none have limits), prefer records
+       whose ``e_number`` does *not* start with ``"E "`` (modern identifiers
+       over historical "E X" notation).
+    3. Otherwise return the first record in the list.
+    """
+    has_limits = [
+        r for r in records
+        if r.min_value is not None or r.max_value is not None
+    ]
+    pool = has_limits if has_limits else records
+    modern = [
+        r for r in pool
+        if not (r.e_number or "").strip().upper().startswith("E ")
+    ]
+    return (modern or pool)[0]
+
+
+def dedup_synonym_candidates(
+    candidates: List[Additive],
+    sub_query: str,
+) -> List[Additive]:
+    """Collapse synonym records that differ only in historical substance-name
+    notation so that only the *primary* record for each canonical
+    (substance, species) identity is returned.
+
+    The function applies two complementary deduplication passes:
+
+    **Pass 1 – canonical vs. loose match filter**
+        A *canonical match* is a record whose
+        :func:`normalize_substance_name` equals the normalized query.
+        A *loose match* is a record that was found only because the query
+        is a substring of the record's substance name (e.g. querying
+        "Natriumselenit" hits "Polyoxyethylen-Sorbitan-Natriumselenat" via
+        substring).  If any canonical matches exist, loose-match-only
+        records are discarded.
+
+    **Pass 2 – synonym grouping within (normalized-substance, species)**
+        Records are grouped by ``(normalize_substance_name(substance),
+        species)``.  Within each group:
+
+        * *Different raw lowercase substance names* (true alias names, such
+          as ``"Selen-Se Natriumselenit*"`` vs. ``"Natriumselenit"``): only
+          the single *primary* record is kept.
+        * *Same raw lowercase substance name but different E-numbers*:
+          if some records have regulatory limits while others do not, only
+          the records *with* limits are kept.  This removes orphan reference
+          entries that are identical in name but carry no limit data.
+          When all records have limits (or none do), all are kept so that
+          genuine species/age-range ambiguity is preserved.
+
+    Genuine ambiguity is always preserved:
+
+    * Records with the same raw substance name, different species, and each
+      having their own limits remain as separate entries.
+    * Records with different normalized substance names are never merged.
+
+    This function is a no-op when *candidates* has zero or one elements.
+    """
+    if len(candidates) <= 1:
+        return candidates
+
+    norm_q = normalize_substance_name(sub_query)
+
+    # ── Pass 1: prefer canonical matches over loose substring matches ─────────
+    canonical = [
+        r for r in candidates
+        if normalize_substance_name(r.substance or "") == norm_q
+    ]
+    pool = canonical if canonical else candidates
+
+    # ── Pass 2: group by (normalized-substance, normalized-species) and dedup ─
+    groups: Dict[Tuple[str, str], List[Additive]] = {}
+    for rec in pool:
+        key = (
+            normalize_substance_name(rec.substance or ""),
+            _dedup_species_key(rec.species or ""),
+        )
+        groups.setdefault(key, []).append(rec)
+
+    result: List[Additive] = []
+    for recs_in_group in groups.values():
+        if len(recs_in_group) == 1:
+            result.append(recs_in_group[0])
+            continue
+
+        raw_names = {(rec.substance or "").strip().lower() for rec in recs_in_group}
+
+        if len(raw_names) > 1:
+            # Different raw names normalizing to the same key → alias synonyms
+            # (e.g. "Selen-Se Natriumselenit*" vs. "Natriumselenit").
+            # Keep only the single primary record.
+            result.append(_pick_primary_record(recs_in_group))
+        else:
+            # Same raw lowercase name, different E-numbers.
+            # If some records have limits and others do not, discard the
+            # limit-free reference entries (historical duplicates).
+            with_limits = [
+                r for r in recs_in_group
+                if r.min_value is not None or r.max_value is not None
+            ]
+            if with_limits and len(with_limits) < len(recs_in_group):
+                # At least one record with limits, at least one without:
+                # keep only those with limits.
+                result.extend(with_limits)
+            else:
+                # All have limits or all lack limits → genuine ambiguity,
+                # keep all.
+                result.extend(recs_in_group)
+
+    return result
 
 
 # =========================================================
@@ -353,9 +552,11 @@ def build_indexes(additives: List[Additive]) -> Dict[str, Any]:
 
     e_to_all_substances: Dict[str, set] = {}
     sub_to_all_e_numbers: Dict[str, set] = {}
+    norm_sub_to_e_numbers: Dict[str, set] = {}
     for a in additives:
         e = (a.e_number or "").upper()
         sub = (a.substance or "").strip()
+        norm_sub = normalize_substance_name(sub)
         if e:
             e_to_all_substances.setdefault(e, set())
             if sub:
@@ -364,6 +565,8 @@ def build_indexes(additives: List[Additive]) -> Dict[str, Any]:
             sub_to_all_e_numbers.setdefault(sub.lower(), set())
             if e:
                 sub_to_all_e_numbers[sub.lower()].add(e)
+        if norm_sub and e:
+            norm_sub_to_e_numbers.setdefault(norm_sub, set()).add(e)
 
     keyword_to_species_keys: Dict[str, set] = {}
     for a in additives:
@@ -381,6 +584,7 @@ def build_indexes(additives: List[Additive]) -> Dict[str, Any]:
         "all_units": sorted({a.unit for a in additives if a.unit}),
         "e_to_all_substances": {k: sorted(v) for k, v in e_to_all_substances.items()},
         "sub_to_all_e_numbers": {k: sorted(v) for k, v in sub_to_all_e_numbers.items()},
+        "norm_sub_to_e_numbers": {k: sorted(v) for k, v in norm_sub_to_e_numbers.items()},
         "keyword_to_species_keys": {k: sorted(v) for k, v in keyword_to_species_keys.items()},
     }
 
@@ -469,7 +673,10 @@ def match_additive_records(
                 for rec in recs:
                     if valid(rec):
                         add_unique(rec)
-        return candidates
+        # Collapse synonym / alias records so that historical substance-name
+        # variants (e.g. "Selen-Se Natriumselenit*" for modern "Natriumselenit")
+        # do not produce false ambiguity.
+        return dedup_synonym_candidates(candidates, sub_q)
 
     return []
 
@@ -488,7 +695,9 @@ def derive_e_number_for_substance(
     collects the set of distinct E-numbers from those records.  As a
     fallback (e.g. when all records are filtered out by species / age
     constraints) it consults the ``sub_to_all_e_numbers`` index which
-    is species-agnostic.
+    is species-agnostic.  As a second fallback the normalized-substance
+    index (``norm_sub_to_e_numbers``) is consulted so that queries using
+    the canonical name of a historical alias can still be resolved.
 
     Returns the single E-number string when it can be derived
     unambiguously, ``None`` when the substance has no E-number or when
@@ -505,6 +714,12 @@ def derive_e_number_for_substance(
         e_set = {r.e_number.upper() for r in recs if r.e_number}
     else:
         e_set = set(idx["sub_to_all_e_numbers"].get(substance.lower(), []))
+        # Second fallback: look up via normalized substance name so that a
+        # query like "Natriumselenit" can still resolve even when the
+        # sub_to_all_e_numbers index only contains the historical alias.
+        if not e_set:
+            norm_key = normalize_substance_name(substance)
+            e_set = set(idx.get("norm_sub_to_e_numbers", {}).get(norm_key, []))
     return next(iter(e_set)) if len(e_set) == 1 else None
 
 

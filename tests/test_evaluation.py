@@ -21,6 +21,9 @@ from laves_eval import (
     match_additive_records,
     derive_e_number_for_substance,
     validate_database,
+    normalize_substance_name,
+    dedup_synonym_candidates,
+    load_additives,
 )
 
 
@@ -840,3 +843,432 @@ class TestDeriveENumberForSubstance:
             "Index must map substance name (lowercase) to its E-number list"
         )
         assert result == "E321"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# normalize_substance_name – canonical key generation
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestNormalizeSubstanceName:
+    """Tests for the normalize_substance_name() normalisation function."""
+
+    # ── Trailing asterisk removal ─────────────────────────────────────────────
+
+    def test_trailing_star_removed(self):
+        assert normalize_substance_name("Natriumselenit*") == "natriumselenit"
+
+    def test_multiple_trailing_stars_removed(self):
+        assert normalize_substance_name("Stoff**") == "stoff"
+
+    def test_no_star_unchanged(self):
+        assert normalize_substance_name("Natriumselenit") == "natriumselenit"
+
+    # ── Element-symbol prefix removal ─────────────────────────────────────────
+
+    def test_selen_se_prefix_removed(self):
+        """'Selen-Se Natriumselenit*' must canonicalise to 'natriumselenit'."""
+        assert normalize_substance_name("Selen-Se Natriumselenit*") == "natriumselenit"
+
+    def test_eisen_fe_prefix_removed(self):
+        assert normalize_substance_name("Eisen -Fe Eisencarbonat*") == "eisencarbonat"
+
+    def test_jod_j_prefix_removed(self):
+        result = normalize_substance_name("Jod -J Calciumjodat, Hexahydrat*")
+        assert result == "calciumjodat, hexahydrat"
+
+    def test_kupfer_cu_prefix_removed(self):
+        result = normalize_substance_name("Kupfer -Cu Kupfer-(II)-acetat, Monohydrat*")
+        assert result == "kupfer-(ii)-acetat, monohydrat"
+
+    def test_mangan_mn_prefix_removed(self):
+        result = normalize_substance_name("Mangan -Mn Mangan-(II)-chlorid, Tetrahydrat*")
+        assert result == "mangan-(ii)-chlorid, tetrahydrat"
+
+    def test_zink_zn_prefix_removed(self):
+        assert normalize_substance_name("Zink -Zn Zinklactat, Trihydrat*") == "zinklactat, trihydrat"
+
+    def test_molybdaen_mo_prefix_removed(self):
+        assert normalize_substance_name("Molybdän -Mo Ammoniummolybdat*") == "ammoniummolybdat"
+
+    # ── Annotation prefix removal ─────────────────────────────────────────────
+
+    def test_annotation_i_prefix_removed(self):
+        result = normalize_substance_name("(i)* Kaliumdihydrogen-orthophosphat")
+        assert result == "kaliumdihydrogen-orthophosphat"
+
+    def test_annotation_ii_prefix_removed(self):
+        result = normalize_substance_name("(ii)* Natriummalat")
+        assert result == "natriummalat"
+
+    # ── Non-element words must NOT be stripped ────────────────────────────────
+
+    def test_fluessige_prefix_not_stripped(self):
+        """'Flüssige' is not an element name – the word must be preserved."""
+        result = normalize_substance_name("Flüssige Lecithine")
+        assert result == "flüssige lecithine"
+
+    def test_organische_prefix_not_stripped(self):
+        """'Organische' is a regular adjective – it must not be stripped."""
+        result = normalize_substance_name("Organische Substanz")
+        assert result == "organische substanz"
+
+    # ── Case folding ──────────────────────────────────────────────────────────
+
+    def test_result_is_lowercase(self):
+        assert normalize_substance_name("Natriumselenit") == normalize_substance_name("NATRIUMSELENIT")
+
+    # ── Synonym equality ─────────────────────────────────────────────────────
+
+    def test_natriumselenit_and_selen_se_natriumselenit_same_key(self):
+        """The canonical lookup key for 'Natriumselenit' and its historical alias
+        'Selen-Se Natriumselenit*' must be identical."""
+        assert (
+            normalize_substance_name("Natriumselenit")
+            == normalize_substance_name("Selen-Se Natriumselenit*")
+        ), (
+            "normalize_substance_name must map both the modern and the historical "
+            "substance name to the same canonical key"
+        )
+
+    def test_sorbitan_monolaurat_case_variants_same_key(self):
+        """Capitalization variants of the same substance name must share a key."""
+        assert (
+            normalize_substance_name("Sorbitan-monolaurat")
+            == normalize_substance_name("Sorbitan-Monolaurat")
+        )
+
+    # ── Edge cases ────────────────────────────────────────────────────────────
+
+    def test_empty_string_returns_empty(self):
+        assert normalize_substance_name("") == ""
+
+    def test_none_equivalent_returns_empty(self):
+        # The function accepts str; passing empty string is the None-safe wrapper
+        assert normalize_substance_name("") == ""
+
+    def test_whitespace_only_returns_empty(self):
+        assert normalize_substance_name("   ") == ""
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# dedup_synonym_candidates – synonym-collapse logic
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestDedupSynonymCandidates:
+    """Tests for the dedup_synonym_candidates() function."""
+
+    def _make(self, substance, e_number, species="Alle Tierarten", max_value=None):
+        return Additive(
+            e_number=e_number,
+            substance=substance,
+            chemical=None,
+            category=None,
+            species=species,
+            max_age_months=None,
+            unit="mg/kg" if max_value is not None else None,
+            min_value=None,
+            max_value=max_value,
+            notes=None,
+            source_ref=None,
+        )
+
+    # ── Natriumselenit / Selen-Se alias collapse ──────────────────────────────
+
+    def test_selen_se_alias_collapsed_to_primary(self):
+        """'Selen-Se Natriumselenit*' must be collapsed with 'Natriumselenit'."""
+        modern = self._make("Natriumselenit", "3b801", max_value=0.5)
+        historical = self._make("Selen-Se Natriumselenit*", "E 8", max_value=None)
+        result = dedup_synonym_candidates([modern, historical], "Natriumselenit")
+        assert len(result) == 1, (
+            "Synonym records must be collapsed to a single primary record"
+        )
+        assert result[0].e_number == "3b801", (
+            "The primary record (the one with limits) must be preferred"
+        )
+
+    def test_historical_record_without_limits_discarded(self):
+        """A historical alias record that carries no limits must be discarded
+        when a modern record with limits exists for the same canonical substance."""
+        modern = self._make("Natriumselenit", "3b801", max_value=0.5)
+        historical = self._make("Selen-Se Natriumselenit*", "E 8", max_value=None)
+        result = dedup_synonym_candidates([historical, modern], "Natriumselenit")
+        e_numbers = {r.e_number for r in result}
+        assert "E 8" not in e_numbers, (
+            "Historical record without limits must not appear in de-duplicated results"
+        )
+        assert "3b801" in e_numbers
+
+    def test_query_with_historical_name_still_resolves_to_primary(self):
+        """Searching by the historical alias name ('Selen-Se Natriumselenit*')
+        must still collapse to the primary modern record."""
+        modern = self._make("Natriumselenit", "3b801", max_value=0.5)
+        historical = self._make("Selen-Se Natriumselenit*", "E 8", max_value=None)
+        # match_additive_records lowercases sub_query before passing it here;
+        # use the lowercase form to replicate that calling convention.
+        result = dedup_synonym_candidates(
+            [modern, historical], "selen-se natriumselenit*"
+        )
+        assert len(result) == 1
+        assert result[0].e_number == "3b801"
+
+    # ── Genuine ambiguity is preserved ───────────────────────────────────────
+
+    def test_different_species_not_collapsed(self):
+        """Records for different species with the same substance name must not
+        be collapsed – they represent distinct regulatory entries."""
+        rec_schweine = self._make("Doppelstoff", "E100", species="Schweine", max_value=10.0)
+        rec_rinder = self._make("Doppelstoff", "E200", species="Rinder", max_value=20.0)
+        result = dedup_synonym_candidates(
+            [rec_schweine, rec_rinder], "Doppelstoff"
+        )
+        assert len(result) == 2, (
+            "Records for different species must be preserved as separate entries"
+        )
+
+    def test_two_records_both_with_limits_kept(self):
+        """Two records with the same normalized substance, same species, and
+        both having limits represent genuinely different additives – keep all."""
+        rec1 = self._make("Doppelstoff", "E100", max_value=10.0)
+        rec2 = self._make("Doppelstoff", "E200", max_value=20.0)
+        result = dedup_synonym_candidates([rec1, rec2], "Doppelstoff")
+        assert len(result) == 2, (
+            "Two records with limits for the same substance and species are "
+            "genuine ambiguity – both must be preserved"
+        )
+
+    def test_single_record_unchanged(self):
+        rec = self._make("Natriumselenit", "3b801", max_value=0.5)
+        result = dedup_synonym_candidates([rec], "Natriumselenit")
+        assert result == [rec]
+
+    def test_empty_list_unchanged(self):
+        assert dedup_synonym_candidates([], "Natriumselenit") == []
+
+    # ── Loose-match filtering (pass 1) ────────────────────────────────────────
+
+    def test_loose_substring_match_discarded_when_canonical_exists(self):
+        """A record that only matches because the query is a substring of its
+        substance name (but the full name normalises differently) must be
+        discarded when a canonical match is present."""
+        canonical = self._make("Natriumselenit", "3b801", max_value=0.5)
+        # 'Polyoxyethylen-Natriumselenit' normalises to a different key
+        loose = self._make("Polyoxyethylen-Natriumselenit", "E999", max_value=None)
+        result = dedup_synonym_candidates(
+            [canonical, loose], "natriumselenit"
+        )
+        assert len(result) == 1
+        assert result[0].e_number == "3b801"
+
+    # ── Same-name duplicate collapse (pass 2, within-group) ──────────────────
+
+    def test_same_name_historical_without_limits_collapsed(self):
+        """When two records share the same raw lowercase substance name but one
+        has limits and the other does not, the limit-free record (historical
+        duplicate) is discarded."""
+        modern = self._make("Sorbitan-Monolaurat", "1c493", max_value=85.0)
+        historical = self._make("Sorbitan-Monolaurat", "E 493", max_value=None)
+        result = dedup_synonym_candidates(
+            [modern, historical], "Sorbitan-Monolaurat"
+        )
+        assert len(result) == 1
+        assert result[0].e_number == "1c493"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# norm_sub_to_e_numbers index – build_indexes validation
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestNormSubToENumbersIndex:
+    """Tests for the norm_sub_to_e_numbers index added to build_indexes()."""
+
+    def _make(self, substance, e_number, species="Alle Tierarten", max_value=None):
+        return Additive(
+            e_number=e_number,
+            substance=substance,
+            chemical=None,
+            category=None,
+            species=species,
+            max_age_months=None,
+            unit="mg/kg" if max_value is not None else None,
+            min_value=None,
+            max_value=max_value,
+            notes=None,
+            source_ref=None,
+        )
+
+    def test_modern_record_indexed_by_normalized_name(self):
+        rec = self._make("Natriumselenit", "3b801", max_value=0.5)
+        idx = build_indexes([rec])
+        assert "3B801" in idx["norm_sub_to_e_numbers"].get("natriumselenit", [])
+
+    def test_historical_record_indexed_by_normalized_name(self):
+        rec = self._make("Selen-Se Natriumselenit*", "E 8", max_value=None)
+        idx = build_indexes([rec])
+        # Both the historical alias and modern record should map to 'natriumselenit'
+        assert "E 8" in idx["norm_sub_to_e_numbers"].get("natriumselenit", [])
+
+    def test_synonym_pair_shares_normalized_key(self):
+        """Both modern and historical records must map to the same normalized key."""
+        modern = self._make("Natriumselenit", "3b801", max_value=0.5)
+        historical = self._make("Selen-Se Natriumselenit*", "E 8", max_value=None)
+        idx = build_indexes([modern, historical])
+        e_list = idx["norm_sub_to_e_numbers"].get("natriumselenit", [])
+        assert "3B801" in e_list
+        assert "E 8" in e_list
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Real-database regression tests
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestRealDatabaseSynonymResolution:
+    """Regression tests using the actual zusatzstoffe.json dataset.
+
+    These tests ensure the full pipeline (load → index → lookup) resolves
+    substance names correctly and does not produce false ambiguity for the
+    known synonym pairs found in the dataset.
+    """
+
+    DATA_PATH = os.path.join(
+        os.path.dirname(__file__), "..", "Data", "zusatzstoffe.json"
+    )
+
+    @pytest.fixture(scope="class")
+    def db(self):
+        additives = load_additives(self.DATA_PATH)
+        idx = build_indexes(additives)
+        return additives, idx
+
+    # ── Natriumselenit / E 8 – the reported bug ───────────────────────────────
+
+    def test_natriumselenit_returns_single_record(self, db):
+        """Searching for 'Natriumselenit' must return exactly one record, not two.
+
+        This is the exact bug scenario: 'Selen-Se Natriumselenit*' (E 8) and
+        'Natriumselenit' (3b801) must be recognised as the same substance and
+        collapsed so the UI does not show a false 'Mehrdeutig' message.
+        """
+        _, idx = db
+        recs = match_additive_records(
+            idx, "",
+            species="Alle Tierarten",
+            age_months=0,
+            substance_query="Natriumselenit",
+        )
+        assert len(recs) == 1, (
+            f"Expected exactly 1 record for 'Natriumselenit', got {len(recs)}: "
+            + ", ".join(f"{r.e_number}/{r.substance!r}" for r in recs)
+        )
+
+    def test_natriumselenit_resolves_to_3b801(self, db):
+        """The resolved record for 'Natriumselenit' must be the modern 3b801 entry
+        (which has regulatory limits) rather than the limit-free historical E 8."""
+        _, idx = db
+        recs = match_additive_records(
+            idx, "",
+            species="Alle Tierarten",
+            age_months=0,
+            substance_query="Natriumselenit",
+        )
+        assert recs[0].e_number.upper() == "3B801", (
+            "The primary record must be the modern 3b801 entry with regulatory limits"
+        )
+
+    def test_natriumselenit_resolved_record_has_limits(self, db):
+        """The resolved record for 'Natriumselenit' must have a maximum limit."""
+        _, idx = db
+        recs = match_additive_records(
+            idx, "",
+            species="Alle Tierarten",
+            age_months=0,
+            substance_query="Natriumselenit",
+        )
+        assert recs[0].max_value is not None, (
+            "Resolved record must carry a max_value so that evaluation is possible"
+        )
+
+    def test_natriumselenit_e_number_auto_fill(self, db):
+        """derive_e_number_for_substance('Natriumselenit') must return '3B801'."""
+        _, idx = db
+        result = derive_e_number_for_substance(idx, "Natriumselenit")
+        assert result == "3B801", (
+            f"Expected auto-fill E-number '3B801', got {result!r}"
+        )
+
+    def test_natriumselenit_900_is_not_konform(self, db):
+        """A lab value of 900 mg/kg for Natriumselenit must be NICHT KONFORM
+        (max is 0.5 mg/kg).  This test also validates that evaluation does not
+        return 'kein Grenzwert hinterlegt' (which would happen if the wrong
+        record were selected)."""
+        _, idx = db
+        recs = match_additive_records(
+            idx, "",
+            species="Alle Tierarten",
+            age_months=0,
+            substance_query="Natriumselenit",
+        )
+        assert recs, "Must find at least one record"
+        ok, msgs = evaluate_single_value(900.0, recs[0])
+        assert ok is False, (
+            "900 mg/kg must be NICHT KONFORM against the 0.5 mg/kg limit"
+        )
+        assert any("Überschreitung" in m for m in msgs)
+
+    def test_natriumselenit_0_3_is_konform(self, db):
+        """A lab value of 0.3 mg/kg for Natriumselenit must be KONFORM."""
+        _, idx = db
+        recs = match_additive_records(
+            idx, "",
+            species="Alle Tierarten",
+            age_months=0,
+            substance_query="Natriumselenit",
+        )
+        ok, msgs = evaluate_single_value(0.3, recs[0])
+        assert ok is True, "0.3 mg/kg must be KONFORM against the 0.5 mg/kg limit"
+
+    # ── E 8 / 3b801 historical-number linkage ─────────────────────────────────
+
+    def test_e8_and_3b801_share_normalized_key(self, db):
+        """E 8 ('Selen-Se Natriumselenit*') and 3b801 ('Natriumselenit') must
+        share the same canonical normalized substance key."""
+        additives, _ = db
+        # Find both records
+        e8 = next(
+            (a for a in additives if a.e_number.upper() == "E 8"), None
+        )
+        b801 = next(
+            (a for a in additives if a.e_number.upper() == "3B801"), None
+        )
+        assert e8 is not None, "E 8 entry must exist in the database"
+        assert b801 is not None, "3b801 entry must exist in the database"
+        assert normalize_substance_name(e8.substance or "") == normalize_substance_name(
+            b801.substance or ""
+        ), (
+            "E 8 and 3b801 must normalize to the same canonical key"
+        )
+
+    def test_norm_sub_index_maps_natriumselenit_to_both_numbers(self, db):
+        """The norm_sub_to_e_numbers index must map 'natriumselenit' to both
+        '3B801' and 'E 8' since both records share that canonical key."""
+        _, idx = db
+        e_list = idx["norm_sub_to_e_numbers"].get("natriumselenit", [])
+        assert "3B801" in e_list, "3B801 must be in norm_sub_to_e_numbers['natriumselenit']"
+        assert "E 8" in e_list, "E 8 must be in norm_sub_to_e_numbers['natriumselenit']"
+
+    # ── Dataset-wide: no false ambiguity for other synonym pairs ──────────────
+
+    def test_sorbitan_monolaurat_returns_single_record(self, db):
+        """Searching for 'Sorbitan-monolaurat' must collapse the modern 1c493
+        entry with the historical E 493* alias to yield a single result."""
+        _, idx = db
+        recs = match_additive_records(
+            idx, "",
+            species="Alle Tierarten",
+            age_months=0,
+            substance_query="Sorbitan-monolaurat",
+        )
+        assert len(recs) == 1, (
+            f"Expected 1 record for 'Sorbitan-monolaurat', got {len(recs)}: "
+            + ", ".join(f"{r.e_number}/{r.substance!r}" for r in recs)
+        )
+        assert recs[0].e_number.upper() == "1C493"
