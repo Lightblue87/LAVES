@@ -373,3 +373,245 @@ class TestIntegration:
                 f"Record {rec.e_number!r} ({rec.species!r}) has no limits "
                 f"but evaluate_single_value returned True"
             )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Substance-name lookup – resolving records by name instead of E-number
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSubstanceNameLookup:
+    """Tests for substance-name-only lookup and the resulting evaluation flow."""
+
+    def _build(self, additives):
+        return build_indexes(additives)
+
+    # ── 1. Exact substance-name lookup → E-number auto-fill ──────────────────
+
+    def test_exact_substance_lookup_returns_record_with_e_number(self):
+        """Substance-only query must return the matching record when it has an E-number."""
+        rec = Additive(
+            e_number="E321",
+            substance="Natriumselenit",
+            chemical=None,
+            category=None,
+            species="Alle Tierarten",
+            max_age_months=None,
+            unit="mg/kg",
+            min_value=None,
+            max_value=10.0,
+            notes=None,
+            source_ref=None,
+        )
+        idx = self._build([rec])
+        results = match_additive_records(
+            idx, "",
+            species="Alle Tierarten",
+            age_months=0,
+            substance_query="Natriumselenit",
+        )
+        assert len(results) == 1
+        assert results[0].e_number == "E321"
+
+    def test_exact_substance_lookup_e_number_derivable(self):
+        """sub_to_all_e_numbers must map the substance to its E-number."""
+        rec = Additive(
+            e_number="E321",
+            substance="Natriumselenit",
+            chemical=None,
+            category=None,
+            species="Alle Tierarten",
+            max_age_months=None,
+            unit="mg/kg",
+            min_value=None,
+            max_value=10.0,
+            notes=None,
+            source_ref=None,
+        )
+        idx = self._build([rec])
+        e_list = sorted(idx["sub_to_all_e_numbers"].get("natriumselenit", []))
+        assert e_list == ["E321"], (
+            "sub_to_all_e_numbers must allow deriving the E-number from the substance name"
+        )
+
+    # ── 2. Exact substance-name lookup where NO E-number exists ──────────────
+
+    def test_substance_lookup_record_without_e_number(self):
+        """Substance-only query must find a record even when it has no E-number."""
+        rec = Additive(
+            e_number="",
+            substance="UnbekannterStoff",
+            chemical=None,
+            category=None,
+            species="Alle Tierarten",
+            max_age_months=None,
+            unit="mg/kg",
+            min_value=None,
+            max_value=5.0,
+            notes=None,
+            source_ref=None,
+        )
+        idx = self._build([rec])
+        results = match_additive_records(
+            idx, "",
+            species="Alle Tierarten",
+            age_months=0,
+            substance_query="UnbekannterStoff",
+        )
+        assert len(results) == 1
+        assert results[0].substance == "UnbekannterStoff"
+
+    def test_evaluation_succeeds_for_record_without_e_number(self):
+        """evaluate_single_value must work on a record that has no E-number."""
+        rec = Additive(
+            e_number="",
+            substance="UnbekannterStoff",
+            chemical=None,
+            category=None,
+            species="Alle Tierarten",
+            max_age_months=None,
+            unit="mg/kg",
+            min_value=None,
+            max_value=5.0,
+            notes=None,
+            source_ref=None,
+        )
+        ok, msgs = evaluate_single_value(3.0, rec)
+        assert ok is True, "Evaluation must succeed (KONFORM) for a record resolved only by name"
+
+    # ── 3. Ambiguous substance name → multiple records returned ──────────────
+
+    def test_ambiguous_substance_name_returns_multiple_records(self):
+        """A substance name shared by multiple records must return all of them."""
+        rec1 = Additive(
+            e_number="E100",
+            substance="Doppelstoff",
+            chemical=None,
+            category=None,
+            species="Schweine",
+            max_age_months=None,
+            unit="mg/kg",
+            min_value=None,
+            max_value=10.0,
+            notes=None,
+            source_ref=None,
+        )
+        rec2 = Additive(
+            e_number="E200",
+            substance="Doppelstoff",
+            chemical=None,
+            category=None,
+            species="Rinder",
+            max_age_months=None,
+            unit="mg/kg",
+            min_value=None,
+            max_value=20.0,
+            notes=None,
+            source_ref=None,
+        )
+        idx = self._build([rec1, rec2])
+        results = match_additive_records(
+            idx, "",
+            species="Alle Tierarten",
+            age_months=0,
+            substance_query="Doppelstoff",
+        )
+        assert len(results) == 2, (
+            "Ambiguous substance name must return all matching records, not just one"
+        )
+
+    def test_ambiguous_substance_name_e_number_list_has_multiple_entries(self):
+        """sub_to_all_e_numbers must list all E-numbers for an ambiguous substance."""
+        rec1 = Additive(
+            e_number="E100",
+            substance="Doppelstoff",
+            chemical=None,
+            category=None,
+            species="Schweine",
+            max_age_months=None,
+            unit="mg/kg",
+            min_value=None,
+            max_value=10.0,
+            notes=None,
+            source_ref=None,
+        )
+        rec2 = Additive(
+            e_number="E200",
+            substance="Doppelstoff",
+            chemical=None,
+            category=None,
+            species="Rinder",
+            max_age_months=None,
+            unit="mg/kg",
+            min_value=None,
+            max_value=20.0,
+            notes=None,
+            source_ref=None,
+        )
+        idx = self._build([rec1, rec2])
+        e_list = sorted(idx["sub_to_all_e_numbers"].get("doppelstoff", []))
+        assert len(e_list) == 2, "Both E-numbers must be present for the ambiguous substance"
+        assert "E100" in e_list and "E200" in e_list
+
+    # ── 4. Validation succeeds when record resolved only by name ─────────────
+
+    def test_validation_succeeds_with_name_only_resolved_record(self):
+        """Records resolved by substance name alone must evaluate without E-number."""
+        rec = Additive(
+            e_number="",
+            substance="Natriumselenit",
+            chemical=None,
+            category=None,
+            species="Alle Tierarten",
+            max_age_months=None,
+            unit="mg/kg",
+            min_value=0.1,
+            max_value=0.5,
+            notes=None,
+            source_ref=None,
+        )
+        idx = self._build([rec])
+
+        # Look up by substance (no E-number known)
+        results = match_additive_records(
+            idx, "",
+            species="Alle Tierarten",
+            age_months=0,
+            substance_query="Natriumselenit",
+        )
+        assert len(results) == 1, "Should resolve exactly one record by substance name"
+
+        # Evaluate using the resolved record
+        ok, msgs = evaluate_single_value(0.3, results[0])
+        assert ok is True, (
+            "Evaluation must succeed (KONFORM) when a valid record is resolved by name only"
+        )
+
+    def test_validation_non_compliant_with_name_only_resolved_record(self):
+        """Non-compliant values must be correctly flagged for name-only resolved records."""
+        rec = Additive(
+            e_number="",
+            substance="Natriumselenit",
+            chemical=None,
+            category=None,
+            species="Alle Tierarten",
+            max_age_months=None,
+            unit="mg/kg",
+            min_value=None,
+            max_value=0.5,
+            notes=None,
+            source_ref=None,
+        )
+        idx = self._build([rec])
+
+        results = match_additive_records(
+            idx, "",
+            species="Alle Tierarten",
+            age_months=0,
+            substance_query="Natriumselenit",
+        )
+        assert len(results) == 1
+
+        ok, msgs = evaluate_single_value(1.0, results[0])
+        assert ok is False, (
+            "Over-limit value must be NICHT KONFORM for name-only resolved records"
+        )

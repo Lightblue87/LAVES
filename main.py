@@ -266,11 +266,12 @@ class EinzelpruefungWidget(QWidget):
 
     def on_check(self):
         e_input = self.cbo_e.currentText().strip()
-        if not e_input:
-            QMessageBox.warning(self, "Fehler", "Bitte E-Nummer eingeben.")
+        sub = self.cbo_sub.currentText().strip()
+
+        if not e_input and not sub:
+            QMessageBox.warning(self, "Fehler", "Bitte E-Nummer oder Stoff eingeben.")
             return
 
-        e = e_input.upper()
         try:
             val = float(self.txt_value.text().replace(",", "."))
         except Exception:
@@ -278,7 +279,7 @@ class EinzelpruefungWidget(QWidget):
             return
 
         sp = self.cbo_species.currentText()
-        sub = self.cbo_sub.currentText().strip()
+        e = e_input.upper()
 
         recs = match_additive_records(
             self.idx, e,
@@ -289,21 +290,31 @@ class EinzelpruefungWidget(QWidget):
         )
 
         if not recs:
-            all_recs = [a for a in self.additives if (a.e_number or "").upper() == e]
+            if e:
+                all_recs = [a for a in self.additives if (a.e_number or "").upper() == e]
+            else:
+                all_recs = [
+                    a for a in self.additives
+                    if sub.casefold() == (a.substance or "").casefold()
+                ]
             species_list = sorted({
                 r.species for r in all_recs
                 if r.species and r.species not in ("Alle Tierarten", sp)
             })
             species_txt = ", ".join(species_list) if species_list else "–"
+            identifier = e or sub
             hint = (
-                f"⚠ Für die Tierart „{sp}“ existiert kein Eintrag für {e}."
+                f"⚠ Für die Tierart „{sp}“ existiert kein Eintrag für {identifier}."
                 f"<br>Grenzwerte liegen vor für: {species_txt}"
             )
             self._set_out(hint, ok=None)
             return
 
         if len(recs) > 1:
-            msg = "<br>".join([f"{r.e_number} {r.substance or ''} → {format_range(r)}" for r in recs])
+            msg = "<br>".join([
+                " ".join(filter(None, [r.e_number or "", r.substance or ""])) + f" → {format_range(r)}"
+                for r in recs
+            ])
             self._set_out("Mehrdeutig – bitte genauer eingrenzen.<br>" + msg, ok=None)
             return
 
@@ -574,7 +585,8 @@ class KombiPruefungWidget(QWidget):
             if not cb_e or not v_item:
                 continue
             e = (cb_e.currentText() or "").strip().upper()
-            if not e:
+            sub_cell = (cb_s.currentText() or "").strip()
+            if not e and not sub_cell:
                 continue
             try:
                 val = float((v_item.text() or "").replace(",", "."))
@@ -584,7 +596,7 @@ class KombiPruefungWidget(QWidget):
             rows.append({
                 "row": r + 1,
                 "e": e,
-                "sub": (cb_s.currentText() or "").strip(),
+                "sub": sub_cell,
                 "val": val,
                 "unit": cb_u.currentText().strip()
             })
@@ -609,10 +621,16 @@ class KombiPruefungWidget(QWidget):
                 substance_query=sub,
                 tierart_kategorie=tierart_cat,
             )
-            header = f"{e} {sub}".strip()
+            header = (f"{e} {sub}".strip()) if e else sub
 
             if not recs:
-                all_recs = [a for a in self.additives if (a.e_number or "").upper() == e]
+                if e:
+                    all_recs = [a for a in self.additives if (a.e_number or "").upper() == e]
+                else:
+                    all_recs = [
+                        a for a in self.additives
+                        if sub.casefold() == (a.substance or "").casefold()
+                    ]
                 species_list = sorted({
                     r.species for r in all_recs
                     if r.species and r.species not in ("Alle Tierarten", sp)
@@ -626,7 +644,10 @@ class KombiPruefungWidget(QWidget):
                 continue
 
             if len(recs) > 1:
-                msg = "<br>".join([f"{r.e_number} {r.substance or ''} → {format_range(r)}" for r in recs])
+                msg = "<br>".join([
+                    " ".join(filter(None, [r.e_number or "", r.substance or ""])) + f" → {format_range(r)}"
+                    for r in recs
+                ])
                 html_blocks.append(f'<b><span style="color:#c62828">{header}: Mehrdeutig.</span></b><br>{msg}')
                 continue
 
