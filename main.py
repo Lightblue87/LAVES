@@ -23,6 +23,7 @@ from laves_eval import (
     build_indexes,
     extract_individual_species,
     match_additive_records,
+    derive_e_number_for_substance,
     format_range,
     evaluate_single_value,
     find_applicable_combo_rules,
@@ -247,20 +248,14 @@ class EinzelpruefungWidget(QWidget):
                 self.cbo_e.setEditText("")
                 return
 
-            recs = match_additive_records(
-                self.idx, "",
+            e_number = derive_e_number_for_substance(
+                self.idx, sub,
                 species=self.cbo_species.currentText(),
                 age_months=self.current_age(),
-                substance_query=sub,
                 tierart_kategorie=self.cbo_tierart_cat.currentText(),
             )
-            if not recs:
-                e_list = self.idx["sub_to_all_e_numbers"].get(sub.lower(), [])
-            else:
-                e_list = sorted({r.e_number.upper() for r in recs if r.e_number})
-
-            if len(e_list) == 1:
-                self.cbo_e.setEditText(e_list[0])
+            if e_number:
+                self.cbo_e.setEditText(e_number)
         finally:
             self._syncing = False
 
@@ -312,7 +307,7 @@ class EinzelpruefungWidget(QWidget):
 
         if len(recs) > 1:
             msg = "<br>".join([
-                " ".join(filter(None, [r.e_number or "", r.substance or ""])) + f" → {format_range(r)}"
+                " ".join(filter(None, [r.e_number, r.substance])) + f" → {format_range(r)}"
                 for r in recs
             ])
             self._set_out("Mehrdeutig – bitte genauer eingrenzen.<br>" + msg, ok=None)
@@ -555,23 +550,14 @@ class KombiPruefungWidget(QWidget):
                 self._clear_combo(cb_s, self.idx["all_substances"])
                 return
 
-            recs = match_additive_records(
-                self.idx, "",
+            e_number = derive_e_number_for_substance(
+                self.idx, sub,
                 species=self.cbo_species.currentText(),
                 age_months=self.age_map.get(self.cbo_age.currentText(), 0),
-                substance_query=sub,
                 tierart_kategorie=self.cbo_tierart_cat.currentText(),
             )
-
-            if not recs:
-                e_list = self.idx["sub_to_all_e_numbers"].get(sub.lower(), [])
-                if len(e_list) == 1:
-                    self._set_text(cb_e, e_list[0])
-                return
-
-            e_list = sorted({x.e_number.upper() for x in recs if x.e_number})
-            if len(e_list) == 1:
-                self._set_text(cb_e, e_list[0])
+            if e_number:
+                self._set_text(cb_e, e_number)
         finally:
             self._end_row(r)
 
@@ -645,7 +631,7 @@ class KombiPruefungWidget(QWidget):
 
             if len(recs) > 1:
                 msg = "<br>".join([
-                    " ".join(filter(None, [r.e_number or "", r.substance or ""])) + f" → {format_range(r)}"
+                    " ".join(filter(None, [r.e_number, r.substance])) + f" → {format_range(r)}"
                     for r in recs
                 ])
                 html_blocks.append(f'<b><span style="color:#c62828">{header}: Mehrdeutig.</span></b><br>{msg}')
