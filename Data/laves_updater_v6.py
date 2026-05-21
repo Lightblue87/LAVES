@@ -1176,6 +1176,8 @@ def categorize_records(data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         'fische': 'Fische/Krebstiere',
         'krebs': 'Fische/Krebstiere',
         'lachs': 'Fische/Krebstiere',
+        'mastkaninchen': 'Sonstige',
+        'mastkan': 'Sonstige',
         'kaninchen': 'Heimtiere',
         'katze': 'Heimtiere',
         'hund': 'Heimtiere',
@@ -1228,10 +1230,32 @@ def apply_known_source_corrections(data: List[Dict[str, Any]]) -> List[Dict[str,
     reviewed regulatory/source issue that the generic PDF table parser cannot
     infer reliably from layout alone.
     """
+    corrected: List[Dict[str, Any]] = []
+
     for record in data:
         kenn = str(record.get("kennnummer") or "").strip().upper()
         species = str(record.get("tierarten") or "").lower()
         source = str(record.get("source_file") or "")
+
+        if (
+            kenn == "4B1702"
+            and record.get("name") == "Saccharomyces cerevisiae CNCM I-4407"
+            and source == "1831__futtermittel_zusatzstoffe_darmflorastabilisatoren.pdf"
+        ):
+            mastkaninchen = {
+                **record,
+                "tierarten": "Mastkaninchen",
+                "tierart_kategorie": "Sonstige",
+                "tierart_spezifisch": True,
+            }
+            heimkaninchen = {
+                **record,
+                "tierarten": "nicht der Lebensmittelerzeugung dienende Kaninchen",
+                "tierart_kategorie": "Heimtiere",
+                "tierart_spezifisch": True,
+            }
+            corrected.extend([mastkaninchen, heimkaninchen])
+            continue
 
         if (
             kenn == "E 770*"
@@ -1243,7 +1267,9 @@ def apply_known_source_corrections(data: List[Dict[str, Any]]) -> List[Dict[str,
             record["tierart_kategorie"] = "Geflügel"
             record["tierart_spezifisch"] = True
 
-    return data
+        corrected.append(record)
+
+    return corrected
 
 
 # ─────────────────────────────────────────────────────────────────────────────

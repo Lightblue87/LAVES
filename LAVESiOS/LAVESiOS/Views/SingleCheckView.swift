@@ -4,6 +4,7 @@ struct SingleCheckView: View {
     @ObservedObject var store: AdditiveStore
 
     @State private var animalCategory = "Alle Kategorien"
+    @State private var selectedSpecies = "Alle Tierarten"
     @State private var eNumber = ""
     @State private var substance = ""
     @State private var value = ""
@@ -25,12 +26,52 @@ struct SingleCheckView: View {
                             Text(category).tag(category)
                         }
                     }
+                    .onChange(of: animalCategory) { _, _ in
+                        selectedSpecies = "Alle Tierarten"
+                        resetAdditiveSelection()
+                    }
+                    Picker("Tierart", selection: $selectedSpecies) {
+                        ForEach(store.species(for: animalCategory), id: \.self) { s in
+                            Text(s).tag(s)
+                        }
+                    }
+                    .onChange(of: selectedSpecies) { _, _ in
+                        resetAdditiveSelection()
+                    }
                 }
 
                 Section("Zusatzstoff") {
-                    TextField("Zulassungsnummer", text: $eNumber)
-                        .textInputAutocapitalization(.characters)
-                    TextField("Stoffname", text: $substance)
+                    SearchableSelectionField(
+                        title: "Zulassungsnummer",
+                        placeholder: "Auswählen",
+                        values: availableENumbers,
+                        selection: $eNumber
+                    )
+                    .onChange(of: eNumber) { _, newValue in
+                        result = nil
+                        guard !newValue.isEmpty else { substance = ""; return }
+                        let subs = EvaluationService.filteredSubstances(
+                            in: store.additives, eNumber: newValue,
+                            animalCategory: animalCategory, selectedSpecies: selectedSpecies
+                        )
+                        if subs.count == 1 { substance = subs[0] }
+                    }
+                    SearchableSelectionField(
+                        title: "Stoffname",
+                        placeholder: "Auswählen",
+                        values: availableSubstances,
+                        selection: $substance
+                    )
+                    .onChange(of: substance) { _, newValue in
+                        result = nil
+                        guard !newValue.isEmpty else { return }
+                        if let derived = EvaluationService.eNumberForSubstance(
+                            in: store.additives, substanceName: newValue,
+                            animalCategory: animalCategory, selectedSpecies: selectedSpecies
+                        ), eNumber != derived {
+                            eNumber = derived
+                        }
+                    }
                     TextField("Laborwert mg/kg", text: $value)
                         .keyboardType(.decimalPad)
                 }
@@ -46,8 +87,32 @@ struct SingleCheckView: View {
                     ResultSection(result: result)
                 }
             }
-            .navigationTitle("LAVES")
+            .navigationTitle("Einzelprüfung")
         }
+    }
+
+    private var availableENumbers: [String] {
+        guard !substance.isEmpty else { return store.eNumbers }
+        let filtered = EvaluationService.filteredENumbers(
+            in: store.additives, substance: substance,
+            animalCategory: animalCategory, selectedSpecies: selectedSpecies
+        )
+        return filtered.isEmpty ? store.eNumbers : filtered
+    }
+
+    private var availableSubstances: [String] {
+        guard !eNumber.isEmpty else { return store.substances }
+        let filtered = EvaluationService.filteredSubstances(
+            in: store.additives, eNumber: eNumber,
+            animalCategory: animalCategory, selectedSpecies: selectedSpecies
+        )
+        return filtered.isEmpty ? store.substances : filtered
+    }
+
+    private func resetAdditiveSelection() {
+        eNumber = ""
+        substance = ""
+        result = nil
     }
 
     private func runCheck() {
@@ -59,7 +124,8 @@ struct SingleCheckView: View {
             in: store.additives,
             eNumber: eNumber,
             substance: substance,
-            animalCategory: animalCategory
+            animalCategory: animalCategory,
+            selectedSpecies: selectedSpecies
         )
 
         guard let additive = matches.first else {

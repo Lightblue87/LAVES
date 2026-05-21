@@ -12,11 +12,22 @@ struct ContentView: View {
 
             BatchCheckView(store: store)
                 .tabItem {
-                    Label("Zusatzstoffe", systemImage: "list.bullet.rectangle")
+                    Label("Partie", systemImage: "scalemass")
                 }
+
+            IngredientScanView(store: store)
+                .tabItem {
+                    Label("Scan", systemImage: "camera.viewfinder")
+                }
+
+            DataStatusView(store: store)
+                .tabItem {
+                    Label("Daten", systemImage: "arrow.down.circle")
+                }
+                .badge(store.updateAvailable ? 1 : 0)
         }
         .task {
-            store.load()
+            await store.load()
         }
     }
 }
