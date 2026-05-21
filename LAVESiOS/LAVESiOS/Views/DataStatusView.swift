@@ -18,7 +18,7 @@ struct DataStatusView: View {
                     }
                 }
 
-                if store.isUpdating || store.updateDetail != nil {
+                if store.isUpdating {
                     Section("Aktualisierung") {
                         if let detail = store.updateDetail {
                             Text(detail)
@@ -30,9 +30,16 @@ struct DataStatusView: View {
                             Text("\(Int(progress * 100)) %")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                        } else if store.isUpdating {
+                        } else {
                             ProgressView()
                         }
+                    }
+                }
+
+                if store.updateAvailable {
+                    Section {
+                        Label("Neue Datenbankversion verfügbar", systemImage: "arrow.down.circle.fill")
+                            .foregroundStyle(.blue)
                     }
                 }
 

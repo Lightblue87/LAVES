@@ -24,6 +24,7 @@ struct ContentView: View {
                 .tabItem {
                     Label("Daten", systemImage: "arrow.down.circle")
                 }
+                .badge(store.updateAvailable ? 1 : 0)
         }
         .task {
             await store.load()

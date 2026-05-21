@@ -14,6 +14,7 @@ final class AdditiveStore: ObservableObject {
     @Published private(set) var isUpdating = false
     @Published private(set) var updateProgress: Double?
     @Published private(set) var updateDetail: String?
+    @Published private(set) var updateAvailable = false
 
     private let downloader = DataDownloadService()
     private let sqliteRepository = SQLiteAdditiveRepository()
@@ -55,6 +56,7 @@ final class AdditiveStore: ObservableObject {
                 additives = try sqliteRepository.loadAdditives(from: localDatabaseURL)
                 loadError = nil
                 dataStatus = localDataStatus(prefix: "Lokale SQLite-Datenbank")
+                Task { await checkForUpdates() }
                 return
             } catch {
                 loadError = "Lokale Datenbank konnte nicht gelesen werden: \(error.localizedDescription)"
@@ -71,20 +73,35 @@ final class AdditiveStore: ObservableObject {
             additives = try JSONDecoder().decode([Additive].self, from: data)
             loadError = nil
             dataStatus = "Bundle-Daten geladen (\(additives.count) Datensätze)"
+            Task { await checkForUpdates() }
         } catch {
             loadError = "Daten konnten nicht geladen werden: \(error.localizedDescription)"
+        }
+    }
+
+    func checkForUpdates() async {
+        guard !isUpdating else { return }
+        do {
+            let manifest = try await downloader.fetchManifest()
+            let isNew = defaults.string(forKey: manifestSHAKey) != manifest.files.sqlite.sha256
+                || !FileManager.default.fileExists(atPath: localDatabaseURL.path)
+            updateAvailable = isNew
+        } catch {
+            // Stille Hintergrundprüfung — Fehler werden ignoriert
         }
     }
 
     func updateFromRemote() async {
         guard !isUpdating else { return }
         isUpdating = true
+        updateAvailable = false
         updateProgress = 0
         updateDetail = "Manifest wird geladen"
         loadError = nil
         defer {
             isUpdating = false
             updateProgress = nil
+            updateDetail = nil
         }
 
         do {
@@ -92,9 +109,10 @@ final class AdditiveStore: ObservableObject {
             updateDetail = "Manifest geprüft"
             if defaults.string(forKey: manifestSHAKey) == manifest.files.sqlite.sha256,
                FileManager.default.fileExists(atPath: localDatabaseURL.path) {
+                // Datum immer mit dem frischen Manifest-Stand aktualisieren
+                defaults.set(manifest.generatedAt, forKey: manifestDateKey)
                 let formattedDate = formattedDataDate(manifest.generatedAt)
-                dataStatus = localDataStatus(prefix: "Datenbank aktuell")
-                updateDetail = "Datenbank aktuell (Stand \(formattedDate))"
+                dataStatus = "Datenbank aktuell (\(additives.count) Datensätze, Stand \(formattedDate))"
                 return
             }
 
