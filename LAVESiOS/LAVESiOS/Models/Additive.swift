@@ -1,7 +1,11 @@
 import Foundation
 
 struct Additive: Identifiable, Decodable, Hashable {
-    let id = UUID()
+    var id: String {
+        let min = minMgKg.map { "\($0)" } ?? ""
+        let max = maxMgKg.map { "\($0)" } ?? ""
+        return "\(eNumber)|\(name)|\(species)|\(animalCategory ?? "")|\(min)|\(max)"
+    }
     let eNumber: String
     let name: String
     let species: String
@@ -26,6 +30,32 @@ struct Additive: Identifiable, Decodable, Hashable {
         case sourceFile = "source_file"
         case sourcePage = "source_page"
         case animalCategory = "tierart_kategorie"
+    }
+
+    init(
+        eNumber: String,
+        name: String,
+        species: String,
+        maxAgeDays: Double?,
+        minMgKg: Double?,
+        maxMgKg: Double?,
+        unit: String?,
+        regulation: String?,
+        sourceFile: String?,
+        sourcePage: Int?,
+        animalCategory: String?
+    ) {
+        self.eNumber = eNumber.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.species = species.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.maxAgeDays = maxAgeDays
+        self.minMgKg = minMgKg
+        self.maxMgKg = maxMgKg
+        self.unit = unit
+        self.regulation = regulation
+        self.sourceFile = sourceFile
+        self.sourcePage = sourcePage
+        self.animalCategory = animalCategory
     }
 
     var displayTitle: String {

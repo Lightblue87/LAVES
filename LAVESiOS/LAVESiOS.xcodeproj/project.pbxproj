@@ -3,30 +3,44 @@
 	archiveVersion = 1;
 	classes = {
 	};
-	objectVersion = 77;
+	objectVersion = 71;
 	objects = {
 
 /* Begin PBXBuildFile section */
 		9A0000010000000000000001 /* LAVESiOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000011 /* LAVESiOSApp.swift */; };
 		9A0000010000000000000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000012 /* ContentView.swift */; };
-		9A0000010000000000000003 /* Additive.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000013 /* Additive.swift */; };
-		9A0000010000000000000004 /* AdditiveStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000014 /* AdditiveStore.swift */; };
-		9A0000010000000000000005 /* EvaluationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000015 /* EvaluationService.swift */; };
-		9A0000010000000000000006 /* SingleCheckView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000016 /* SingleCheckView.swift */; };
-		9A0000010000000000000007 /* BatchCheckView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000017 /* BatchCheckView.swift */; };
-		9A0000010000000000000008 /* zusatzstoffe.json in Resources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000018 /* zusatzstoffe.json */; };
+		9A0000010000000000000003 /* Models/Additive.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000013 /* Models/Additive.swift */; };
+		9A0000010000000000000004 /* Services/AdditiveStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000014 /* Services/AdditiveStore.swift */; };
+		9A0000010000000000000005 /* Services/EvaluationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000015 /* Services/EvaluationService.swift */; };
+		9A0000010000000000000006 /* Views/SingleCheckView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000016 /* Views/SingleCheckView.swift */; };
+		9A0000010000000000000007 /* Views/BatchCheckView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000017 /* Views/BatchCheckView.swift */; };
+		9A0000010000000000000008 /* Resources/zusatzstoffe.json in Resources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000018 /* Resources/zusatzstoffe.json */; };
+		9A0000010000000000000033 /* Services/DataDownloadService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000036 /* Services/DataDownloadService.swift */; };
+		9A0000010000000000000034 /* Services/SQLiteAdditiveRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000037 /* Services/SQLiteAdditiveRepository.swift */; };
+		9A0000010000000000000035 /* Views/DataStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000038 /* Views/DataStatusView.swift */; };
+		9A0000010000000000000039 /* Views/SearchableSelectionField.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000040 /* Views/SearchableSelectionField.swift */; };
+		9A0000010000000000000041 /* Services/IngredientScanService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000043 /* Services/IngredientScanService.swift */; };
+		9A0000010000000000000042 /* Views/IngredientScanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000044 /* Views/IngredientScanView.swift */; };
+		9A0000010000000000000045 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000046 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		9A0000010000000000000009 /* LAVESiOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LAVESiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		9A0000010000000000000011 /* LAVESiOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LAVESiOSApp.swift; sourceTree = "<group>"; };
 		9A0000010000000000000012 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
-		9A0000010000000000000013 /* Additive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models/Additive.swift; sourceTree = "<group>"; };
-		9A0000010000000000000014 /* AdditiveStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/AdditiveStore.swift; sourceTree = "<group>"; };
-		9A0000010000000000000015 /* EvaluationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/EvaluationService.swift; sourceTree = "<group>"; };
-		9A0000010000000000000016 /* SingleCheckView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/SingleCheckView.swift; sourceTree = "<group>"; };
-		9A0000010000000000000017 /* BatchCheckView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/BatchCheckView.swift; sourceTree = "<group>"; };
-		9A0000010000000000000018 /* zusatzstoffe.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = Resources/zusatzstoffe.json; sourceTree = "<group>"; };
+		9A0000010000000000000013 /* Models/Additive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models/Additive.swift; sourceTree = "<group>"; };
+		9A0000010000000000000014 /* Services/AdditiveStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/AdditiveStore.swift; sourceTree = "<group>"; };
+		9A0000010000000000000015 /* Services/EvaluationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/EvaluationService.swift; sourceTree = "<group>"; };
+		9A0000010000000000000016 /* Views/SingleCheckView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/SingleCheckView.swift; sourceTree = "<group>"; };
+		9A0000010000000000000017 /* Views/BatchCheckView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/BatchCheckView.swift; sourceTree = "<group>"; };
+		9A0000010000000000000018 /* Resources/zusatzstoffe.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = Resources/zusatzstoffe.json; sourceTree = "<group>"; };
+		9A0000010000000000000036 /* Services/DataDownloadService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/DataDownloadService.swift; sourceTree = "<group>"; };
+		9A0000010000000000000037 /* Services/SQLiteAdditiveRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/SQLiteAdditiveRepository.swift; sourceTree = "<group>"; };
+		9A0000010000000000000038 /* Views/DataStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/DataStatusView.swift; sourceTree = "<group>"; };
+		9A0000010000000000000040 /* Views/SearchableSelectionField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/SearchableSelectionField.swift; sourceTree = "<group>"; };
+		9A0000010000000000000043 /* Services/IngredientScanService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/IngredientScanService.swift; sourceTree = "<group>"; };
+		9A0000010000000000000044 /* Views/IngredientScanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/IngredientScanView.swift; sourceTree = "<group>"; };
+		9A0000010000000000000046 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -53,12 +67,19 @@
 			children = (
 				9A0000010000000000000011 /* LAVESiOSApp.swift */,
 				9A0000010000000000000012 /* ContentView.swift */,
-				9A0000010000000000000013 /* Additive.swift */,
-				9A0000010000000000000014 /* AdditiveStore.swift */,
-				9A0000010000000000000015 /* EvaluationService.swift */,
-				9A0000010000000000000016 /* SingleCheckView.swift */,
-				9A0000010000000000000017 /* BatchCheckView.swift */,
-				9A0000010000000000000018 /* zusatzstoffe.json */,
+				9A0000010000000000000013 /* Models/Additive.swift */,
+				9A0000010000000000000014 /* Services/AdditiveStore.swift */,
+				9A0000010000000000000036 /* Services/DataDownloadService.swift */,
+				9A0000010000000000000015 /* Services/EvaluationService.swift */,
+				9A0000010000000000000043 /* Services/IngredientScanService.swift */,
+				9A0000010000000000000037 /* Services/SQLiteAdditiveRepository.swift */,
+				9A0000010000000000000016 /* Views/SingleCheckView.swift */,
+				9A0000010000000000000017 /* Views/BatchCheckView.swift */,
+				9A0000010000000000000038 /* Views/DataStatusView.swift */,
+				9A0000010000000000000044 /* Views/IngredientScanView.swift */,
+				9A0000010000000000000040 /* Views/SearchableSelectionField.swift */,
+				9A0000010000000000000018 /* Resources/zusatzstoffe.json */,
+				9A0000010000000000000046 /* Assets.xcassets */,
 			);
 			path = LAVESiOS;
 			sourceTree = "<group>";
@@ -117,7 +138,6 @@
 			);
 			mainGroup = 9A0000010000000000000020;
 			minimizedProjectReferenceProxies = 1;
-			preferredProjectObjectVersion = 77;
 			productRefGroup = 9A0000010000000000000022 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -132,7 +152,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				9A0000010000000000000008 /* zusatzstoffe.json in Resources */,
+				9A0000010000000000000008 /* Resources/zusatzstoffe.json in Resources */,
+				9A0000010000000000000045 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -145,11 +166,17 @@
 			files = (
 				9A0000010000000000000001 /* LAVESiOSApp.swift in Sources */,
 				9A0000010000000000000002 /* ContentView.swift in Sources */,
-				9A0000010000000000000003 /* Additive.swift in Sources */,
-				9A0000010000000000000004 /* AdditiveStore.swift in Sources */,
-				9A0000010000000000000005 /* EvaluationService.swift in Sources */,
-				9A0000010000000000000006 /* SingleCheckView.swift in Sources */,
-				9A0000010000000000000007 /* BatchCheckView.swift in Sources */,
+				9A0000010000000000000003 /* Models/Additive.swift in Sources */,
+				9A0000010000000000000004 /* Services/AdditiveStore.swift in Sources */,
+				9A0000010000000000000033 /* Services/DataDownloadService.swift in Sources */,
+				9A0000010000000000000005 /* Services/EvaluationService.swift in Sources */,
+				9A0000010000000000000034 /* Services/SQLiteAdditiveRepository.swift in Sources */,
+				9A0000010000000000000006 /* Views/SingleCheckView.swift in Sources */,
+				9A0000010000000000000007 /* Views/BatchCheckView.swift in Sources */,
+				9A0000010000000000000035 /* Views/DataStatusView.swift in Sources */,
+				9A0000010000000000000041 /* Services/IngredientScanService.swift in Sources */,
+				9A0000010000000000000042 /* Views/IngredientScanView.swift in Sources */,
+				9A0000010000000000000039 /* Views/SearchableSelectionField.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -279,10 +306,12 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = JENQ6BW7HF;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = LAVES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.medical";
+				INFOPLIST_KEY_NSCameraUsageDescription = "LAVES nutzt die Kamera, um Inhaltsstofflisten auf Etiketten zu lesen.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "LAVES nutzt ausgewählte Bilder, um Inhaltsstofflisten auf Etiketten zu lesen.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -294,6 +323,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
+				OTHER_LDFLAGS = "-lsqlite3";
 				PRODUCT_BUNDLE_IDENTIFIER = de.lightblue87.laves;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -308,10 +338,12 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = JENQ6BW7HF;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = LAVES;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.medical";
+				INFOPLIST_KEY_NSCameraUsageDescription = "LAVES nutzt die Kamera, um Inhaltsstofflisten auf Etiketten zu lesen.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "LAVES nutzt ausgewählte Bilder, um Inhaltsstofflisten auf Etiketten zu lesen.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -323,6 +355,7 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
+				OTHER_LDFLAGS = "-lsqlite3";
 				PRODUCT_BUNDLE_IDENTIFIER = de.lightblue87.laves;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -334,20 +367,20 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		9A0000010000000000000028 /* Build configuration list for PBXProject "LAVESiOS" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				9A0000010000000000000029 /* Debug */,
-				9A0000010000000000000030 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		9A0000010000000000000024 /* Build configuration list for PBXNativeTarget "LAVESiOS" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				9A0000010000000000000031 /* Debug */,
 				9A0000010000000000000032 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		9A0000010000000000000028 /* Build configuration list for PBXProject "LAVESiOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9A0000010000000000000029 /* Debug */,
+				9A0000010000000000000030 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
