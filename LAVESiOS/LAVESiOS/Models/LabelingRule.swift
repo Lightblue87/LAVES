@@ -126,6 +126,6 @@ struct LabelingDatabaseInfo {
     let celex: String
     let versionDate: String
     let createdAt: String
-    let ruleCount: Int
+    let totalRuleCount: Int
     let sha256: String
 }

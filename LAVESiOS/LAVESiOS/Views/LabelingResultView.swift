@@ -2,12 +2,14 @@ import SwiftUI
 
 struct LabelingResultView: View {
     let result: LabelingCheckResult
+    var onRecheckWithDifferentFeedType: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
             List {
                 overallSection
+                recheckSection
                 metaSection
                 rulesSection
                 disclaimerSection
@@ -43,6 +45,19 @@ struct LabelingResultView: View {
         }
     }
 
+    private var recheckSection: some View {
+        Section {
+            if let recheck = onRecheckWithDifferentFeedType {
+                Button {
+                    dismiss()
+                    recheck()
+                } label: {
+                    Label("Andere Futtermittelart prüfen", systemImage: "arrow.trianglehead.2.clockwise")
+                }
+            }
+        }
+    }
+
     private var metaSection: some View {
         Section("Prüfinformation") {
             LabeledContent("Hinweis", value: "Mobiler Schnellcheck")
@@ -56,7 +71,13 @@ struct LabelingResultView: View {
                 LabeledContent("Hinweise gefunden in", value: matchedLanguageSummary)
             }
             LabeledContent("Geprüft", value: result.checkedAt.formatted(date: .abbreviated, time: .shortened))
-            LabeledContent("Regeln geprüft", value: "\(result.ruleResults.count)")
+            LabeledContent("Relevante Regeln geprüft", value: "\(result.ruleResults.count)")
+            if let total = result.databaseInfo?.totalRuleCount {
+                LabeledContent("Gesamtregeln in Datenbank", value: "\(total)")
+            }
+            Text("Es werden nur die für \"\(result.feedType.displayName)\" geltenden und allgemeinen Regeln geprüft – nicht alle \(result.databaseInfo.map { "\($0.totalRuleCount)" } ?? "–") Datenbankregeln.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 

@@ -38,7 +38,10 @@ struct LabelingCheckView: View {
             }
             .sheet(isPresented: $isResultPresented) {
                 if let result = checkResult {
-                    LabelingResultView(result: result)
+                    LabelingResultView(result: result) {
+                        needsManualSelection = true
+                        selectedFeedType = nil
+                    }
                 }
             }
             .onAppear {
@@ -63,7 +66,7 @@ struct LabelingCheckView: View {
                 LabeledContent("CELEX", value: dbInfo.celex)
                 LabeledContent("Regelversion", value: dbInfo.version)
                 LabeledContent("Datenstand", value: formattedDataDate(dbInfo.createdAt))
-                LabeledContent("Regeln", value: "\(dbInfo.ruleCount)")
+                LabeledContent("Regeln in Datenbank", value: "\(dbInfo.totalRuleCount)")
             } else if let error = labelingStore.loadError {
                 Text(error)
                     .font(.caption)
@@ -187,13 +190,18 @@ struct LabelingCheckView: View {
                                 .font(.subheadline)
                             Text("Automatisch erkannt · \(Int(detection.confidence * 100)) %")
                                 .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(detection.confidence < 0.6 ? .orange : .secondary)
                         }
                         Spacer()
                         Button("Ändern") {
                             needsManualSelection = true
                         }
                         .font(.caption)
+                    }
+                    if detection.confidence < 0.6 {
+                        Label("Niedrige Erkennungssicherheit – bitte Futtermittelart manuell bestätigen.", systemImage: "exclamationmark.triangle")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
                     }
                 } else if needsManualSelection || detectionResult == nil {
                     if !ambiguousCandidates.isEmpty && detectionResult == nil {
@@ -247,7 +255,7 @@ struct LabelingCheckView: View {
                             Text(result.overallStatus.rawValue)
                                 .fontWeight(.semibold)
                                 .foregroundStyle(overallColor(result.overallStatus))
-                            Text("\(result.ruleResults.count) Regeln geprüft · Ergebnis anzeigen")
+                            Text("\(result.ruleResults.count) relevante Regeln geprüft · Ergebnis anzeigen")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }

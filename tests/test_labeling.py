@@ -1,24 +1,25 @@
 """Tests for the LAVES labeling check pipeline.
 
-Covers:
-- FeedTypeDetector (10 cases)
-- LabelingCheckService regex/keyword patterns (10 cases)
-- Edge cases: OCR errors, line breaks, ambiguous text (6 cases)
-- DB integrity check (4 cases)
+The session-scoped ``fresh_db`` fixture (conftest.py) builds a fresh
+laves_labeling.sqlite from scripts/build_labeling_db.py into a temporary
+directory before any test runs.  DB-dependent classes receive the connection
+via ``@pytest.fixture(autouse=True) def _db(self, fresh_db)``.
+
+Pure pattern-matching tests (Sections 2–7) have no DB dependency and run
+even when the build environment is unavailable.
 """
 
 from __future__ import annotations
 
 import re
 import sqlite3
-import sys
-from pathlib import Path
 
 import pytest
 
 # ------------------------------------------------------------------
-# Helpers — pattern matching logic mirrored from LabelingCheckService
+# Pattern-matching helpers — mirror LabelingCheckService logic
 # ------------------------------------------------------------------
+
 
 def keyword_match(keyword: str, text: str) -> bool:
     return keyword.lower() in text.lower()
@@ -31,36 +32,27 @@ def regex_match(pattern: str, text: str) -> bool:
         return False
 
 
-def load_db() -> sqlite3.Connection | None:
-    candidates = [
-        Path(__file__).parent.parent / "dist" / "laves_labeling.sqlite",
-        Path(__file__).parent.parent / "LAVESiOS" / "LAVESiOS" / "Resources" / "laves_labeling.sqlite",
-    ]
-    for p in candidates:
-        if p.exists():
-            return sqlite3.connect(p)
-    return None
-
-
 # ------------------------------------------------------------------
-# 1. Feed type detection
+# 1. Feed type detection  (requires DB)
 # ------------------------------------------------------------------
+
 
 class TestFeedTypeDetection:
     """10 cases: keyword matching for each relevant feed type."""
 
+    @pytest.fixture(autouse=True)
+    def _db(self, fresh_db: sqlite3.Connection) -> None:
+        self.con = fresh_db
+
     def _detect(self, text: str) -> list[str]:
-        """Return feed type IDs whose keywords appear in text."""
-        con = load_db()
-        if con is None:
-            pytest.skip("laves_labeling.sqlite not found")
-        rows = con.execute(
-            "SELECT id, keywords_de FROM labeling_feed_types WHERE id != 'all' AND id != 'unknown'"
+        rows = self.con.execute(
+            "SELECT id, keywords_de FROM labeling_feed_types "
+            "WHERE id != 'all' AND id != 'unknown'"
         ).fetchall()
-        con.close()
         text_lower = text.lower()
         return [
-            row[0] for row in rows
+            row[0]
+            for row in rows
             if any(
                 kw.strip().lower() in text_lower
                 for kw in row[1].split(",")
@@ -69,37 +61,28 @@ class TestFeedTypeDetection:
         ]
 
     def test_complete_feed_detected(self):
-        text = "Alleinfuttermittel für ausgewachsene Hunde"
-        assert "complete_feed" in self._detect(text)
+        assert "complete_feed" in self._detect("Alleinfuttermittel für ausgewachsene Hunde")
 
     def test_complementary_feed_detected(self):
-        text = "Ergänzungsfuttermittel für Schweine"
-        assert "complementary_feed" in self._detect(text)
+        assert "complementary_feed" in self._detect("Ergänzungsfuttermittel für Schweine")
 
     def test_single_feed_detected(self):
-        text = "Einzelfuttermittel: Weizenmehl"
-        assert "single_feed" in self._detect(text)
+        assert "single_feed" in self._detect("Einzelfuttermittel: Weizenmehl")
 
     def test_compound_feed_detected(self):
-        text = "Mischfuttermittel für Geflügel"
-        assert "compound_feed" in self._detect(text)
+        assert "compound_feed" in self._detect("Mischfuttermittel für Geflügel")
 
     def test_mineral_feed_detected(self):
-        text = "Mineralfuttermittel für Milchkühe"
-        assert "mineral_feed" in self._detect(text)
+        assert "mineral_feed" in self._detect("Mineralfuttermittel für Milchkühe")
 
     def test_milk_replacer_detected(self):
-        text = "Milchaustauscher für Kälber bis 4 Wochen"
-        assert "milk_replacer" in self._detect(text)
+        assert "milk_replacer" in self._detect("Milchaustauscher für Kälber bis 4 Wochen")
 
     def test_pet_feed_detected(self):
-        text = "Heimtierfutter für Katzen"
-        assert "pet_feed" in self._detect(text)
+        assert "pet_feed" in self._detect("Heimtierfutter für Katzen")
 
     def test_ambiguous_text_matches_multiple(self):
-        # "Alleinfuttermittel" AND "Ergänzungsfuttermittel" in same text
-        text = "Alleinfuttermittel sowie Ergänzungsfuttermittel für Hühner"
-        detected = self._detect(text)
+        detected = self._detect("Alleinfuttermittel sowie Ergänzungsfuttermittel für Hühner")
         assert len(detected) >= 2
 
     def test_empty_text_no_match(self):
@@ -110,7 +93,7 @@ class TestFeedTypeDetection:
 
 
 # ------------------------------------------------------------------
-# 2. Lot number patterns
+# 2. Lot number patterns  (pure Python)
 # ------------------------------------------------------------------
 
 LOT_PATTERNS = [
@@ -119,25 +102,28 @@ LOT_PATTERNS = [
 
 
 class TestLotNumberPattern:
-    @pytest.mark.parametrize("text,expected", [
-        ("Charge: A2024-09-01", True),
-        ("LOT 20240901A", True),
-        ("L: XYZ123", True),
-        ("Partie: P2024/05", True),
-        ("Chargen-Nr. 20240501-001", True),
-        ("Los: 4567", True),
-        # "Chargenangabe" starts with "Charge" at a word boundary — legitimately matches
-        ("Chargenangabe: A2024", True),
-        ("CHOLESTEROL 200mg", False),
-        ("Produktbeschreibung ohne Angabe", False),
-    ])
-    def test_lot_pattern(self, text, expected):
+    @pytest.mark.parametrize(
+        "text,expected",
+        [
+            ("Charge: A2024-09-01", True),
+            ("LOT 20240901A", True),
+            ("L: XYZ123", True),
+            ("Partie: P2024/05", True),
+            ("Chargen-Nr. 20240501-001", True),
+            ("Los: 4567", True),
+            # "Chargenangabe" starts with "Charge" at a word boundary — legitimately matches
+            ("Chargenangabe: A2024", True),
+            ("CHOLESTEROL 200mg", False),
+            ("Produktbeschreibung ohne Angabe", False),
+        ],
+    )
+    def test_lot_pattern(self, text: str, expected: bool) -> None:
         result = any(regex_match(p, text) for p in LOT_PATTERNS)
         assert result == expected, f"Lot pattern on '{text}' expected {expected}"
 
 
 # ------------------------------------------------------------------
-# 3. Net quantity patterns
+# 3. Net quantity patterns  (pure Python)
 # ------------------------------------------------------------------
 
 NET_PATTERNS = [
@@ -147,249 +133,353 @@ NET_PATTERNS = [
 
 
 class TestNetQuantityPattern:
-    @pytest.mark.parametrize("text,expected", [
-        ("Nettomasse: 10 kg", True),
-        ("500 g", True),
-        ("2,5 kg", True),
-        ("Inhalt: 1 Liter", True),
-        ("250ml", True),
-        ("Rohprotein 18 %", False),
-        ("Seite 5", False),
-    ])
-    def test_net_quantity_pattern(self, text, expected):
+    @pytest.mark.parametrize(
+        "text,expected",
+        [
+            ("Nettomasse: 10 kg", True),
+            ("500 g", True),
+            ("2,5 kg", True),
+            ("Inhalt: 1 Liter", True),
+            ("250ml", True),
+            ("Rohprotein 18 %", False),
+            ("Seite 5", False),
+        ],
+    )
+    def test_net_quantity_pattern(self, text: str, expected: bool) -> None:
         result = any(regex_match(p, text) for p in NET_PATTERNS)
         assert result == expected, f"Net quantity pattern on '{text}' expected {expected}"
 
 
 # ------------------------------------------------------------------
-# 4. Best-before patterns
+# 4. Best-before patterns  (pure Python)
 # ------------------------------------------------------------------
 
 BBD_PATTERNS = [
     r"\b(MHD|BBD|mindestens haltbar bis)[:\s]*\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{2,4}\b",
 ]
 BBD_KEYWORDS = [
-    "Mindesthaltbarkeit", "mindestens haltbar bis", "MHD", "best before",
-    "verwendbar bis", "haltbar bis",
+    "Mindesthaltbarkeit",
+    "mindestens haltbar bis",
+    "MHD",
+    "best before",
+    "verwendbar bis",
+    "haltbar bis",
 ]
 
 
 class TestBestBeforePattern:
-    @pytest.mark.parametrize("text,expected", [
-        ("MHD: 31.12.2025", True),
-        ("mindestens haltbar bis 31.12.2025", True),
-        # ISO / partial formats not matched by this German-date regex — expected False
-        ("BBD 2025-12-31", False),
-        ("mindestens haltbar bis 01/2026", False),
-        ("best before 12/2025", False),
-        ("Kein Ablaufdatum vorhanden", False),
-    ])
-    def test_bbd_regex(self, text, expected):
+    @pytest.mark.parametrize(
+        "text,expected",
+        [
+            ("MHD: 31.12.2025", True),
+            ("mindestens haltbar bis 31.12.2025", True),
+            # ISO / partial formats not matched by the German-date regex — expected False
+            ("BBD 2025-12-31", False),
+            ("mindestens haltbar bis 01/2026", False),
+            ("best before 12/2025", False),
+            ("Kein Ablaufdatum vorhanden", False),
+        ],
+    )
+    def test_bbd_regex(self, text: str, expected: bool) -> None:
         result = any(regex_match(p, text) for p in BBD_PATTERNS)
         assert result == expected
 
-    @pytest.mark.parametrize("text,expected", [
-        ("Mindesthaltbarkeit: 31.12.2025", True),
-        ("MHD 01.06.2026", True),
-        ("haltbar bis Ende 2025", True),
-        ("Kein Datum angegeben", False),
-    ])
-    def test_bbd_keyword(self, text, expected):
+    @pytest.mark.parametrize(
+        "text,expected",
+        [
+            ("Mindesthaltbarkeit: 31.12.2025", True),
+            ("MHD 01.06.2026", True),
+            ("haltbar bis Ende 2025", True),
+            ("Kein Datum angegeben", False),
+        ],
+    )
+    def test_bbd_keyword(self, text: str, expected: bool) -> None:
         result = any(keyword_match(kw, text) for kw in BBD_KEYWORDS)
         assert result == expected
 
 
 # ------------------------------------------------------------------
-# 5. Composition detection
+# 5. Composition detection  (pure Python)
 # ------------------------------------------------------------------
 
 COMPOSITION_KEYWORDS = ["Zusammensetzung", "Zutaten:", "Inhaltsstoffe"]
 
 
 class TestCompositionDetection:
-    @pytest.mark.parametrize("text,expected", [
-        ("Zusammensetzung: Hühnerfleisch (40%), Leber (10%)", True),
-        ("Zutaten: Weizen, Mais, Sojaextraktionsschrot", True),
-        ("Inhaltsstoffe: diverse", True),
-        ("Rohprotein 18 %, Rohfett 8 %", False),
-        ("Analytische Bestandteile", False),
-    ])
-    def test_composition_keyword(self, text, expected):
+    @pytest.mark.parametrize(
+        "text,expected",
+        [
+            ("Zusammensetzung: Hühnerfleisch (40%), Leber (10%)", True),
+            ("Zutaten: Weizen, Mais, Sojaextraktionsschrot", True),
+            ("Inhaltsstoffe: diverse", True),
+            ("Rohprotein 18 %, Rohfett 8 %", False),
+            ("Analytische Bestandteile", False),
+        ],
+    )
+    def test_composition_keyword(self, text: str, expected: bool) -> None:
         result = any(keyword_match(kw, text) for kw in COMPOSITION_KEYWORDS)
         assert result == expected
 
 
 # ------------------------------------------------------------------
-# 6. Analytical constituents detection
+# 6. Analytical constituents  (pure Python)
 # ------------------------------------------------------------------
 
 ANALYTICAL_KEYWORDS = [
-    "Analytische Bestandteile", "Rohprotein", "Rohfaser", "Rohfett", "Rohasche",
+    "Analytische Bestandteile",
+    "Rohprotein",
+    "Rohfaser",
+    "Rohfett",
+    "Rohasche",
 ]
 
 
 class TestAnalyticalConstituents:
-    @pytest.mark.parametrize("text,expected", [
-        ("Analytische Bestandteile: Rohprotein 24 %, Rohfett 12 %", True),
-        ("Rohprotein 18 %", True),
-        ("Rohfaser 5 %, Rohasche 6 %", True),
-        ("Zusammensetzung: Hühnerfleisch", False),
-        ("Zutaten: Weizen", False),
-    ])
-    def test_analytical_keyword(self, text, expected):
+    @pytest.mark.parametrize(
+        "text,expected",
+        [
+            ("Analytische Bestandteile: Rohprotein 24 %, Rohfett 12 %", True),
+            ("Rohprotein 18 %", True),
+            ("Rohfaser 5 %, Rohasche 6 %", True),
+            ("Zusammensetzung: Hühnerfleisch", False),
+            ("Zutaten: Weizen", False),
+        ],
+    )
+    def test_analytical_keyword(self, text: str, expected: bool) -> None:
         result = any(keyword_match(kw, text) for kw in ANALYTICAL_KEYWORDS)
         assert result == expected
 
 
 # ------------------------------------------------------------------
-# 7. Additives detection
+# 7. Additives detection  (pure Python)
 # ------------------------------------------------------------------
 
 ADDITIVE_KEYWORDS = [
-    "Zusatzstoffe", "Ernährungsphysiologische Zusatzstoffe",
-    "Technologische Zusatzstoffe", "Zootechnische Zusatzstoffe",
+    "Zusatzstoffe",
+    "Ernährungsphysiologische Zusatzstoffe",
+    "Technologische Zusatzstoffe",
+    "Zootechnische Zusatzstoffe",
 ]
 
 
 class TestAdditivesDetection:
-    @pytest.mark.parametrize("text,expected", [
-        ("Zusatzstoffe: Vitamin A 15.000 IE/kg", True),
-        ("Ernährungsphysiologische Zusatzstoffe: Biotin", True),
-        ("Technologische Zusatzstoffe: Antioxidationsmittel", True),
-        ("Zusammensetzung: Weizen, Mais", False),
-        ("Analytische Bestandteile", False),
-    ])
-    def test_additive_keyword(self, text, expected):
+    @pytest.mark.parametrize(
+        "text,expected",
+        [
+            ("Zusatzstoffe: Vitamin A 15.000 IE/kg", True),
+            ("Ernährungsphysiologische Zusatzstoffe: Biotin", True),
+            ("Technologische Zusatzstoffe: Antioxidationsmittel", True),
+            ("Zusammensetzung: Weizen, Mais", False),
+            ("Analytische Bestandteile", False),
+        ],
+    )
+    def test_additive_keyword(self, text: str, expected: bool) -> None:
         result = any(keyword_match(kw, text) for kw in ADDITIVE_KEYWORDS)
         assert result == expected
 
 
 # ------------------------------------------------------------------
-# 8. OCR error resilience
+# 8. OCR error resilience  (mostly pure Python; one test uses DB)
 # ------------------------------------------------------------------
 
+
 class TestOCRResilience:
-    def test_ocr_linebreaks_lot(self):
-        # OCR often splits words across lines
+    def test_ocr_linebreaks_lot(self) -> None:
         text = "Char\nge: A2024-09"
         joined = text.replace("\n", "")
         assert keyword_match("Charge", joined) or regex_match(LOT_PATTERNS[0], joined)
 
-    def test_ocr_missing_space_net(self):
-        text = "Nettomasse:10kg"
-        assert any(regex_match(p, text) for p in NET_PATTERNS)
+    def test_ocr_missing_space_net(self) -> None:
+        assert any(regex_match(p, "Nettomasse:10kg") for p in NET_PATTERNS)
 
-    def test_ocr_uppercase_keywords(self):
-        text = "ZUSAMMENSETZUNG: WEIZEN, MAIS"
-        assert any(keyword_match(kw, text) for kw in COMPOSITION_KEYWORDS)
+    def test_ocr_uppercase_keywords(self) -> None:
+        assert any(
+            keyword_match(kw, "ZUSAMMENSETZUNG: WEIZEN, MAIS")
+            for kw in COMPOSITION_KEYWORDS
+        )
 
-    def test_ocr_partial_word_no_false_positive(self):
-        # "Charge" appearing inside another word shouldn't count
-        text = "Durchcharge-Verfahren"
-        # The regex uses word boundaries, so it should not match "Charge" inside a compound
-        # Our regex: \b(LOT|L|Charge|...)
-        # "Durchcharge" - "Charge" does NOT start at a word boundary here
-        result = any(regex_match(p, text) for p in LOT_PATTERNS)
-        # Accept either outcome — this is a known OCR ambiguity
+    def test_ocr_partial_word_no_false_positive(self) -> None:
+        result = any(regex_match(p, "Durchcharge-Verfahren") for p in LOT_PATTERNS)
         assert isinstance(result, bool)
 
-    def test_mixed_german_english_label(self):
-        # International pet food labels often mix languages
+    def test_mixed_german_english_label(self) -> None:
         text = "Complete pet food for dogs / Alleinfuttermittel für Hunde. Best before: 12/2026"
         assert keyword_match("Alleinfuttermittel", text)
         assert keyword_match("best before", text)
 
-    def test_english_fallback_keywords(self):
-        text = "Complementary pet food for adult cats. Composition: meat. Analytical constituents: crude protein 35.5 %."
+    def test_english_fallback_keywords(self) -> None:
+        text = (
+            "Complementary pet food for adult cats. Composition: meat. "
+            "Analytical constituents: crude protein 35.5 %."
+        )
         assert keyword_match("complementary pet food", text)
         assert keyword_match("composition", text)
         assert keyword_match("analytical constituents", text)
 
-    def test_other_language_fallback_keywords(self):
-        text = "Alimento complementare per gatti adulti. Composizione: carni. Componenti analitici: proteina grezza 35,5 %."
+    def test_other_language_fallback_keywords(self) -> None:
+        text = (
+            "Alimento complementare per gatti adulti. Composizione: carni. "
+            "Componenti analitici: proteina grezza 35,5 %."
+        )
         assert keyword_match("alimento complementare", text)
         assert keyword_match("composizione", text)
         assert keyword_match("componenti analitici", text)
 
-    def test_animal_species_with_words_between(self):
-        con = load_db()
-        if con is None:
-            pytest.skip("laves_labeling.sqlite not found")
+    def test_animal_species_with_words_between(self, fresh_db: sqlite3.Connection) -> None:
         patterns = [
-            row[0] for row in con.execute(
+            row[0]
+            for row in fresh_db.execute(
                 """
                 SELECT pattern_value FROM labeling_rule_patterns
-                WHERE rule_id='art17_001_complementary'
-                  AND pattern_type='regex'
-                  AND pattern_language='de'
+                WHERE rule_id = 'art17_001_complementary'
+                  AND pattern_type = 'regex'
+                  AND pattern_language = 'de'
                 """
             )
         ]
-        con.close()
+        assert patterns, "No regex patterns found for art17_001_complementary / de"
         text = "Ergänzungsfuttermittel für ausgewachsene Katzen Zusammensetzung"
-        assert any(regex_match(pattern, text) for pattern in patterns)
+        assert any(regex_match(p, text) for p in patterns)
 
-    def test_short_ocr_not_checkable(self):
-        text = "LAVES GmbH"
-        # Less than 40 characters → should be flagged as not checkable
-        assert len(text) < 40
+    def test_short_ocr_not_checkable(self) -> None:
+        assert len("LAVES GmbH") < 40
 
 
 # ------------------------------------------------------------------
-# 9. Database integrity
+# 9. Database integrity  (requires DB)
 # ------------------------------------------------------------------
+
 
 class TestDatabaseIntegrity:
-    def setup_method(self):
-        self.con = load_db()
-        if self.con is None:
-            pytest.skip("laves_labeling.sqlite not found")
+    @pytest.fixture(autouse=True)
+    def _db(self, fresh_db: sqlite3.Connection) -> None:
+        self.con = fresh_db
 
-    def teardown_method(self):
-        if self.con:
-            self.con.close()
-
-    def test_rule_count_matches_metadata(self):
-        rule_count = self.con.execute("SELECT COUNT(*) FROM labeling_rules").fetchone()[0]
-        meta_count = self.con.execute(
+    def test_rule_count_matches_metadata(self) -> None:
+        rule_count = self.con.execute(
+            "SELECT COUNT(*) FROM labeling_rules"
+        ).fetchone()[0]
+        meta = self.con.execute(
             "SELECT value FROM labeling_metadata WHERE key='labeling_rule_count'"
         ).fetchone()
-        assert meta_count is not None, "labeling_rule_count metadata missing"
-        assert rule_count == int(meta_count[0])
+        assert meta is not None, "labeling_rule_count metadata missing"
+        assert rule_count == int(meta[0])
 
-    def test_all_rules_have_patterns(self):
-        rules_without_patterns = self.con.execute("""
+    def test_all_rules_have_patterns(self) -> None:
+        missing = self.con.execute(
+            """
             SELECT r.id FROM labeling_rules r
             LEFT JOIN labeling_rule_patterns p ON p.rule_id = r.id
             WHERE p.id IS NULL
-        """).fetchall()
-        assert rules_without_patterns == [], (
-            f"Rules without patterns: {[r[0] for r in rules_without_patterns]}"
-        )
+            """
+        ).fetchall()
+        assert missing == [], f"Rules without patterns: {[r[0] for r in missing]}"
 
-    def test_regulation_record_exists(self):
+    def test_regulation_record_exists(self) -> None:
         reg = self.con.execute(
             "SELECT id FROM labeling_regulations WHERE id='reg_767_2009'"
         ).fetchone()
         assert reg is not None
 
-    def test_sha256_metadata_present(self):
+    def test_sha256_metadata_present(self) -> None:
         sha = self.con.execute(
             "SELECT value FROM labeling_metadata WHERE key='labeling_sha256'"
         ).fetchone()
         assert sha is not None
         assert len(sha[0]) == 64, "SHA-256 should be 64 hex characters"
 
-    def test_patterns_have_language_column(self):
+    def test_patterns_have_language_column(self) -> None:
         columns = {
-            row[1] for row in self.con.execute("PRAGMA table_info(labeling_rule_patterns)")
+            row[1]
+            for row in self.con.execute("PRAGMA table_info(labeling_rule_patterns)")
         }
-        assert "pattern_language" in columns
+        assert "pattern_language" in columns, (
+            "Testdatenbank veraltet – bitte neu generieren. "
+            "Spalte 'pattern_language' fehlt in labeling_rule_patterns."
+        )
 
-    def test_multilingual_patterns_present(self):
-        counts = dict(self.con.execute(
-            "SELECT pattern_language, COUNT(*) FROM labeling_rule_patterns GROUP BY pattern_language"
-        ).fetchall())
-        assert counts.get("de", 0) > 0
-        assert counts.get("en", 0) > 0
-        assert counts.get("other", 0) > 0
+    def test_multilingual_patterns_present(self) -> None:
+        counts = dict(
+            self.con.execute(
+                "SELECT pattern_language, COUNT(*) "
+                "FROM labeling_rule_patterns GROUP BY pattern_language"
+            ).fetchall()
+        )
+        assert counts.get("de", 0) > 0, "No German patterns found"
+        assert counts.get("en", 0) > 0, "No English patterns found"
+        assert counts.get("other", 0) > 0, "No 'other' language patterns found"
+
+
+# ------------------------------------------------------------------
+# 10. Relevant rule count vs. total rule count  (requires DB)
+# ------------------------------------------------------------------
+
+
+class TestRelevantRuleCount:
+    """Verifies that the iOS app correctly loads only feed-type-relevant
+    rules rather than all rules.  Checking all 39 rules against any single
+    label would produce false positives for feed-type-specific requirements.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _db(self, fresh_db: sqlite3.Connection) -> None:
+        self.con = fresh_db
+
+    def _relevant_count(self, feed_type_id: str) -> int:
+        return self.con.execute(
+            "SELECT COUNT(*) FROM labeling_rules "
+            "WHERE feed_type_id = 'all' OR feed_type_id = ?",
+            (feed_type_id,),
+        ).fetchone()[0]
+
+    def test_total_rule_count_is_39(self) -> None:
+        count = self.con.execute(
+            "SELECT COUNT(*) FROM labeling_rules"
+        ).fetchone()[0]
+        assert count == 39, f"Expected 39 rules in DB, got {count}"
+
+    def test_complete_feed_loads_11_relevant_rules(self) -> None:
+        count = self._relevant_count("complete_feed")
+        assert count == 11, (
+            f"complete_feed should load 11 relevant rules "
+            f"(6 general Art.15 + 5 Art.17), got {count}"
+        )
+
+    def test_single_feed_loads_9_relevant_rules(self) -> None:
+        count = self._relevant_count("single_feed")
+        assert count == 9, (
+            f"single_feed should load 9 relevant rules "
+            f"(6 general Art.15 + 3 Art.17), got {count}"
+        )
+
+    def test_relevant_count_less_than_total(self) -> None:
+        total = self.con.execute(
+            "SELECT COUNT(*) FROM labeling_rules"
+        ).fetchone()[0]
+        for feed_type_id in ("complete_feed", "single_feed", "complementary_feed"):
+            relevant = self._relevant_count(feed_type_id)
+            assert relevant < total, (
+                f"{feed_type_id}: relevant ({relevant}) must be < total ({total})"
+            )
+
+    def test_general_and_specific_rules_both_exist(self) -> None:
+        general = self.con.execute(
+            "SELECT COUNT(*) FROM labeling_rules WHERE feed_type_id = 'all'"
+        ).fetchone()[0]
+        specific = self.con.execute(
+            "SELECT COUNT(*) FROM labeling_rules WHERE feed_type_id != 'all'"
+        ).fetchone()[0]
+        assert general > 0, "DB must contain general rules (feed_type_id='all')"
+        assert specific > 0, "DB must contain feed-type-specific rules"
+
+    def test_no_duplicate_rule_ids(self) -> None:
+        rows = self.con.execute(
+            "SELECT id, feed_type_id FROM labeling_rules"
+        ).fetchall()
+        seen: dict[str, str] = {}
+        for rule_id, ftid in rows:
+            assert rule_id not in seen, (
+                f"Duplicate rule id '{rule_id}' in feed_type_id='{ftid}' "
+                f"and '{seen[rule_id]}'"
+            )
+            seen[rule_id] = ftid
