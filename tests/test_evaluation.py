@@ -1272,3 +1272,33 @@ class TestRealDatabaseSynonymResolution:
             + ", ".join(f"{r.e_number}/{r.substance!r}" for r in recs)
         )
         assert recs[0].e_number.upper() == "1C493"
+
+
+class TestRealDatabaseKnownCorrections:
+    """Regression tests for reviewed source/parser corrections."""
+
+    DATA_PATH = os.path.join(
+        os.path.dirname(__file__), "..", "Data", "zusatzstoffe.json"
+    )
+
+    @pytest.fixture(scope="class")
+    def db(self):
+        additives = load_additives(self.DATA_PATH)
+        idx = build_indexes(additives)
+        return additives, idx
+
+    def test_e770_truthuehner_limit_is_5_to_5(self, db):
+        additives, _ = db
+        rec = next(
+            (
+                a for a in additives
+                if a.e_number.upper() == "E 770*"
+                and "Truthühner" in a.species
+            ),
+            None,
+        )
+
+        assert rec is not None, "E 770* Truthühner entry must exist"
+        assert rec.min_value == 5.0
+        assert rec.max_value == 5.0
+        assert rec.extra.get("tierart_kategorie") == "Geflügel"

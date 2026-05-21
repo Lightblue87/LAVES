@@ -1221,6 +1221,31 @@ def categorize_records(data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return data
 
 
+def apply_known_source_corrections(data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Apply reviewed corrections for parser/source edge cases.
+
+    Keep this list small and explicit. Each correction should correspond to a
+    reviewed regulatory/source issue that the generic PDF table parser cannot
+    infer reliably from layout alone.
+    """
+    for record in data:
+        kenn = str(record.get("kennnummer") or "").strip().upper()
+        species = str(record.get("tierarten") or "").lower()
+        source = str(record.get("source_file") or "")
+
+        if (
+            kenn == "E 770*"
+            and "truth" in species
+            and source == "70524__futtermittel_zusatzstoffe_kokzidiostatika_histomonostatika.pdf"
+        ):
+            record["min_mg_kg"] = 5.0
+            record["max_mg_kg"] = 5.0
+            record["tierart_kategorie"] = "Geflügel"
+            record["tierart_spezifisch"] = True
+
+    return data
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Qualitätsprüfung
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1288,6 +1313,7 @@ def main(pdf_dir: Path = PDF_DIR) -> None:
 
     # Kategorisierung hinzufügen
     merged = categorize_records(merged)
+    merged = apply_known_source_corrections(merged)
 
     OUT_JSON.parent.mkdir(parents=True, exist_ok=True)
     with open(OUT_JSON, "w", encoding="utf-8") as f:
