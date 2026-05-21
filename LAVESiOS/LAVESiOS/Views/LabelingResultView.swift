@@ -168,6 +168,7 @@ private struct RuleResultRow: View {
     private var statusColor: Color {
         switch ruleResult.status {
         case .found: return .green
+        case .probablyFound: return .teal
         case .missing: return ruleResult.rule.severity == .critical ? .red : .orange
         case .unclear: return .orange
         case .notApplicable: return .secondary
@@ -235,6 +236,7 @@ struct LabelingRuleDetailView: View {
     private var statusColor: Color {
         switch ruleResult.status {
         case .found: return .green
+        case .probablyFound: return .teal
         case .missing: return ruleResult.rule.severity == .critical ? .red : .orange
         case .unclear: return .orange
         case .notApplicable: return .secondary

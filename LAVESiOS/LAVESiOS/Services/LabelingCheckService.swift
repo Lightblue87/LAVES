@@ -93,13 +93,13 @@ struct LabelingCheckService {
         }
 
         let confidence = found.weight
-        let status: RuleCheckStatus = confidence >= 0.7 ? .found : .unclear
+        let status: RuleCheckStatus = confidence >= 0.85 ? .found : .probablyFound
         var notes: [String] = []
         if found.language != "de" {
             notes.append("Hinweis wurde in \(languageName(found.language)) gefunden.")
         }
-        if status == .unclear {
-            notes.append("Treffer mit niedriger Sicherheit erkannt. OCR-Text und Etikett bitte manuell prüfen.")
+        if status == .probablyFound {
+            notes.append("Indirekter Treffer erkannt – Etikett bitte manuell bestätigen.")
         }
         return RuleCheckResult(rule: rule, status: status, matchedText: found.text,
                                matchedLanguage: found.language, confidence: confidence,
@@ -117,11 +117,16 @@ struct LabelingCheckService {
         }
         if criticalMissing { return .auffaellig }
 
+        // Critical rule only indirectly confirmed → uncertain
+        let hasCriticalUncertain = results.contains {
+            $0.rule.severity == .critical
+                && ($0.status == .probablyFound || $0.status == .unclear)
+        }
         let hasUnclear = results.contains { $0.status == .unclear }
         let hasWarningMissing = results.contains {
             $0.rule.severity == .warning && $0.status == .missing
         }
-        if hasUnclear || hasWarningMissing { return .unklar }
+        if hasCriticalUncertain || hasUnclear || hasWarningMissing { return .unklar }
 
         return .keineAuffaelligkeit
     }
