@@ -119,6 +119,8 @@ struct LabelingCheckResult {
     let dbVersion: String
     let databaseInfo: LabelingDatabaseInfo?
     let ocrText: String
+    /// Per-image OCR items when the check was based on a multi-image session. Nil for single-image checks.
+    let imageItems: [OCRImageItem]?
 }
 
 // MARK: - Database Info

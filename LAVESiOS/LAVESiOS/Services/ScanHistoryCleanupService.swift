@@ -36,6 +36,8 @@ final class ScanHistoryService: ObservableObject {
         cleanup(reason: .settingsChanged)
     }
 
+    // MARK: - Adding entries
+
     @discardableResult
     func add(ocrText: String, thumbnail: UIImage?) -> ScanEntry {
         guard settings.isHistoryEnabled else {
@@ -55,9 +57,43 @@ final class ScanHistoryService: ObservableObject {
         return entry
     }
 
+    /// Persists a `MultiImageOCRSession` to scan history and returns the new `ScanEntry`.
+    /// Each session image is stored as a thumbnail; the merged OCR text is stored on the entry.
+    @discardableResult
+    func add(session: MultiImageOCRSession) -> ScanEntry {
+        guard settings.isHistoryEnabled else {
+            return ScanEntry(ocrText: session.mergedOCRText, thumbnailFileName: nil)
+        }
+
+        var fileNamesByID: [UUID: String] = [:]
+        for img in session.images {
+            if let image = img.image,
+               let fileName = imageStore.store(thumbnail: image, settings: settings) {
+                fileNamesByID[img.id] = fileName
+            }
+        }
+
+        let imageItems = session.makeOCRImageItems(thumbnailFileNames: fileNamesByID)
+        let firstFileName = imageItems.first?.thumbnailFileName
+
+        let entry = ScanEntry(
+            id: UUID(),
+            timestamp: Date(),
+            ocrText: session.mergedOCRText,
+            thumbnailFileName: firstFileName,
+            imageItems: imageItems.isEmpty ? nil : imageItems
+        )
+        entries.insert(entry, at: 0)
+        cleanup(reason: .addedEntry)
+        save()
+        return entry
+    }
+
+    // MARK: - Deleting entries
+
     func delete(at offsets: IndexSet) {
         for idx in offsets {
-            imageStore.remove(fileName: entries[idx].thumbnailFileName)
+            imageStore.remove(fileNames: entries[idx].allThumbnailFileNames)
         }
         entries.remove(atOffsets: offsets)
         save()
@@ -65,17 +101,24 @@ final class ScanHistoryService: ObservableObject {
 
     func delete(_ entry: ScanEntry) {
         guard let idx = entries.firstIndex(where: { $0.id == entry.id }) else { return }
-        imageStore.remove(fileName: entries[idx].thumbnailFileName)
+        imageStore.remove(fileNames: entries[idx].allThumbnailFileNames)
         entries.remove(at: idx)
         save()
     }
 
     func deleteEntries(withIDs ids: Set<UUID>) {
         for entry in entries where ids.contains(entry.id) {
-            imageStore.remove(fileName: entry.thumbnailFileName)
+            imageStore.remove(fileNames: entry.allThumbnailFileNames)
         }
         entries.removeAll { ids.contains($0.id) }
         save()
+    }
+
+    // MARK: - History loading for session
+
+    /// Populates a `MultiImageOCRSession` from a scan history entry.
+    func loadIntoSession(_ session: MultiImageOCRSession, from entry: ScanEntry) {
+        session.loadFromEntry(entry, imageStore: imageStore)
     }
 
     func togglePinned(_ entry: ScanEntry) {
@@ -96,12 +139,7 @@ final class ScanHistoryService: ObservableObject {
     func previewCleanup(with newSettings: ScanHistorySettings) -> ScanHistoryCleanupPolicy.Result {
         var result = ScanHistoryCleanupPolicy.apply(entries: entries, settings: newSettings)
         if let byteLimit = newSettings.storageLimit.bytes {
-            let imageSizes = Dictionary(
-                uniqueKeysWithValues: result.entries.compactMap { entry -> (String, Int64)? in
-                    guard let fileName = entry.thumbnailFileName else { return nil }
-                    return (fileName, imageStore.imageSize(fileName: fileName))
-                }
-            )
+            let imageSizes = allImageSizes(for: result.entries)
             let storageResult = ScanHistoryCleanupPolicy.removeImagesToFitStorage(
                 entries: result.entries,
                 imageSizesByFileName: imageSizes,
@@ -113,29 +151,49 @@ final class ScanHistoryService: ObservableObject {
         return result
     }
 
+    private func allImageSizes(for entries: [ScanEntry]) -> [String: Int64] {
+        var sizes: [String: Int64] = [:]
+        for entry in entries {
+            for fileName in entry.allThumbnailFileNames {
+                sizes[fileName] = imageStore.imageSize(fileName: fileName)
+            }
+        }
+        return sizes
+    }
+
     var pinnedImagesBytesExceedStorageLimit: Bool {
         guard let byteLimit = settings.storageLimit.bytes else { return false }
         let pinnedBytes = entries
             .filter(\.isPinned)
-            .compactMap(\.thumbnailFileName)
+            .flatMap(\.allThumbnailFileNames)
             .reduce(Int64(0)) { $0 + imageStore.imageSize(fileName: $1) }
         return pinnedBytes > byteLimit
     }
 
     func deleteAllImages(keepOCRText: Bool = true) {
         for entry in entries where !entry.isPinned {
-            imageStore.remove(fileName: entry.thumbnailFileName)
+            imageStore.remove(fileNames: entry.allThumbnailFileNames)
         }
         if keepOCRText {
             entries = entries.map {
                 guard !$0.isPinned else { return $0 }
+                let clearedItems = $0.imageItems?.map { item in
+                    OCRImageItem(
+                        id: item.id,
+                        imageType: item.imageType,
+                        thumbnailFileName: nil,
+                        ocrText: item.ocrText,
+                        capturedAt: item.capturedAt
+                    )
+                }
                 return ScanEntry(
                     id: $0.id,
                     timestamp: $0.timestamp,
                     ocrText: $0.ocrText,
                     thumbnailFileName: nil,
                     isPinned: $0.isPinned,
-                    note: $0.note
+                    note: $0.note,
+                    imageItems: clearedItems
                 )
             }
         } else {
@@ -146,7 +204,7 @@ final class ScanHistoryService: ObservableObject {
 
     func deleteAll() {
         for entry in entries where !entry.isPinned {
-            imageStore.remove(fileName: entry.thumbnailFileName)
+            imageStore.remove(fileNames: entry.allThumbnailFileNames)
         }
         entries.removeAll { !$0.isPinned }
         save()
@@ -187,19 +245,14 @@ final class ScanHistoryService: ObservableObject {
     }
 
     private func cleanup(reason: CleanupReason) {
-        let referenced = Set(entries.compactMap(\.thumbnailFileName))
+        let referenced = Set(entries.flatMap(\.allThumbnailFileNames))
         let removedOrphans = imageStore.removeOrphans(referencedFileNames: referenced)
         var policyResult = ScanHistoryCleanupPolicy.apply(entries: entries, settings: settings)
         imageStore.remove(fileNames: policyResult.imageFileNamesToRemove)
         entries = policyResult.entries
 
         if let byteLimit = settings.storageLimit.bytes {
-            let imageSizes = Dictionary(
-                uniqueKeysWithValues: entries.compactMap { entry -> (String, Int64)? in
-                    guard let fileName = entry.thumbnailFileName else { return nil }
-                    return (fileName, imageStore.imageSize(fileName: fileName))
-                }
-            )
+            let imageSizes = allImageSizes(for: entries)
             let storageResult = ScanHistoryCleanupPolicy.removeImagesToFitStorage(
                 entries: entries,
                 imageSizesByFileName: imageSizes,
@@ -212,10 +265,10 @@ final class ScanHistoryService: ObservableObject {
 
             var currentBytes = imageStore.totalImageBytes()
             while currentBytes > byteLimit,
-                  let candidate = entries.last(where: { !$0.isPinned && $0.thumbnailFileName != nil }),
-                  let fileName = candidate.thumbnailFileName {
-                let size = imageStore.imageSize(fileName: fileName)
-                imageStore.remove(fileName: fileName)
+                  let candidate = entries.last(where: { !$0.isPinned && !$0.allThumbnailFileNames.isEmpty }) {
+                let fileNames = candidate.allThumbnailFileNames
+                let size = fileNames.reduce(Int64(0)) { $0 + imageStore.imageSize(fileName: $1) }
+                imageStore.remove(fileNames: fileNames)
                 entries.removeAll { $0.id == candidate.id }
                 policyResult.removedEntries += 1
                 currentBytes = max(0, currentBytes - size)

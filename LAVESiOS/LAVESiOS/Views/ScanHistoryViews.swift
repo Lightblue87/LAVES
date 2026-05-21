@@ -171,31 +171,46 @@ private struct ScanEntryRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Group {
-                if let img = thumbnail {
-                    Image(uiImage: img)
-                        .resizable()
-                        .scaledToFill()
-                } else {
-                    Color.secondary.opacity(0.15)
-                        .overlay {
-                            Image(systemName: "photo")
-                                .foregroundStyle(.secondary)
-                        }
+            ZStack(alignment: .bottomTrailing) {
+                Group {
+                    if let img = thumbnail {
+                        Image(uiImage: img)
+                            .resizable()
+                            .scaledToFill()
+                    } else {
+                        Color.secondary.opacity(0.15)
+                            .overlay {
+                                Image(systemName: "photo")
+                                    .foregroundStyle(.secondary)
+                            }
+                    }
+                }
+                .frame(width: 58, height: 58)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                // Multi-image badge
+                if entry.isMultiImage {
+                    Text("\(entry.imageCount)")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(.teal, in: Capsule())
+                        .offset(x: 4, y: 4)
                 }
             }
-            .frame(width: 58, height: 58)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     if entry.isPinned {
-                        Image(systemName: "pin.fill")
-                            .foregroundStyle(.yellow)
+                        Image(systemName: "pin.fill").foregroundStyle(.yellow)
                     }
                     Text(entry.timestamp.formatted(date: .abbreviated, time: .shortened))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .font(.caption).foregroundStyle(.secondary)
+                    if entry.isMultiImage {
+                        Image(systemName: "photo.stack")
+                            .font(.caption).foregroundStyle(.teal)
+                    }
                 }
                 Text(entry.ocrSnippet.isEmpty ? "Kein OCR-Text" : entry.ocrSnippet)
                     .font(.subheadline)

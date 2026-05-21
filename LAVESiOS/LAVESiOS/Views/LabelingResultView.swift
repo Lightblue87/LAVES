@@ -10,6 +10,7 @@ struct LabelingResultView: View {
             List {
                 overallSection
                 recheckSection
+                imageCoverageSection
                 metaSection
                 rulesSection
                 disclaimerSection
@@ -42,6 +43,35 @@ struct LabelingResultView: View {
                 }
             }
             .padding(.vertical, 6)
+        }
+    }
+
+    @ViewBuilder
+    private var imageCoverageSection: some View {
+        if let items = result.imageItems, !items.isEmpty {
+            Section("Gescannte Bildbereiche") {
+                LabeledContent("Bilder", value: "\(items.count) von \(MultiImageOCRSession.maxImages)")
+                let coveredNames = items.map(\.imageType.displayName).joined(separator: ", ")
+                LabeledContent("Erfasste Bereiche", value: coveredNames)
+
+                let covered = Set(items.map(\.imageType))
+                let missing = OCRImageType.allCases.filter { !covered.contains($0) }
+                if !missing.isEmpty {
+                    LabeledContent("Nicht erfasst", value: missing.map(\.displayName).joined(separator: ", "))
+                        .foregroundStyle(.secondary)
+                }
+
+                // Coverage warnings for location-specific rules
+                let hasBodenOrDeckel = covered.contains(.boden) || covered.contains(.deckel)
+                if !hasBodenOrDeckel {
+                    Label(
+                        "Kein Boden- oder Deckel-Bild – Losnummer/MHD möglicherweise nicht sichtbar.",
+                        systemImage: "exclamationmark.triangle"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                }
+            }
         }
     }
 

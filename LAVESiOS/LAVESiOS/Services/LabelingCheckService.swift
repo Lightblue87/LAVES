@@ -12,7 +12,11 @@ struct LabelingCheckService {
         feedType: LabelingFeedType,
         feedTypeConfidence: Double,
         rules: [LabelingRule],
-        dbInfo: LabelingDatabaseInfo?
+        dbInfo: LabelingDatabaseInfo?,
+        /// Rule-ID prefixes for which `.missing` results are downgraded to `.notCheckable`
+        /// due to missing packaging area images (see `LabelCoverageAnalyzer`).
+        forcedNotCheckableRulePrefixes: Set<String> = [],
+        imageItems: [OCRImageItem]? = nil
     ) -> LabelingCheckResult {
         guard ocrText.count >= minOCRLength else {
             let results = rules.map { rule in
@@ -28,12 +32,31 @@ struct LabelingCheckService {
                 checkedAt: Date(),
                 dbVersion: dbInfo?.version ?? "–",
                 databaseInfo: dbInfo,
-                ocrText: ocrText
+                ocrText: ocrText,
+                imageItems: imageItems
             )
         }
 
-        let ruleResults = rules.map { rule in
+        var ruleResults = rules.map { rule in
             checkRule(rule, in: ocrText)
+        }
+
+        // Apply coverage-based notCheckable overrides (only for .missing results)
+        if !forcedNotCheckableRulePrefixes.isEmpty {
+            ruleResults = ruleResults.map { result in
+                guard result.status == .missing,
+                      forcedNotCheckableRulePrefixes.contains(where: { result.rule.id.hasPrefix($0) }) else {
+                    return result
+                }
+                return RuleCheckResult(
+                    rule: result.rule,
+                    status: .notCheckable,
+                    matchedText: nil,
+                    matchedLanguage: nil,
+                    confidence: 0,
+                    note: LabelCoverageAnalyzer.missingAreaNote
+                )
+            }
         }
 
         let overall = overallStatus(from: ruleResults)
@@ -46,7 +69,8 @@ struct LabelingCheckService {
             checkedAt: Date(),
             dbVersion: dbInfo?.version ?? "–",
             databaseInfo: dbInfo,
-            ocrText: ocrText
+            ocrText: ocrText,
+            imageItems: imageItems
         )
     }
 

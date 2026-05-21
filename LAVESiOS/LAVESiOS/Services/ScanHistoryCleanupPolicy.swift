@@ -35,36 +35,44 @@ struct ScanHistoryCleanupPolicy {
     ) -> Result {
         var result = Result(entries: input)
 
+        func entryImageBytes(_ entry: ScanEntry) -> Int64 {
+            entry.allThumbnailFileNames.reduce(Int64(0)) { $0 + (imageSizesByFileName[$1] ?? 0) }
+        }
+
         func currentBytes() -> Int64 {
-            result.entries.reduce(Int64(0)) { total, entry in
-                guard let fileName = entry.thumbnailFileName else { return total }
-                return total + (imageSizesByFileName[fileName] ?? 0)
-            }
+            result.entries.reduce(Int64(0)) { $0 + entryImageBytes($1) }
         }
 
         while currentBytes() > byteLimit {
             guard let candidate = result.entries
-                .filter({ !$0.isPinned && $0.thumbnailFileName != nil })
-                .sorted(by: {
-                    imageSizesByFileName[$0.thumbnailFileName ?? ""] ?? 0 >
-                    imageSizesByFileName[$1.thumbnailFileName ?? ""] ?? 0
-                })
-                .first,
-                let fileName = candidate.thumbnailFileName else {
+                .filter({ !$0.isPinned && !$0.allThumbnailFileNames.isEmpty })
+                .sorted(by: { entryImageBytes($0) > entryImageBytes($1) })
+                .first else {
                 break
             }
 
-            result.imageFileNamesToRemove.append(fileName)
-            result.removedImages += 1
+            let fileNames = candidate.allThumbnailFileNames
+            result.imageFileNamesToRemove.append(contentsOf: fileNames)
+            result.removedImages += fileNames.count
             result.entries = result.entries.map {
                 guard $0.id == candidate.id else { return $0 }
+                let clearedItems = $0.imageItems?.map { item in
+                    OCRImageItem(
+                        id: item.id,
+                        imageType: item.imageType,
+                        thumbnailFileName: nil,
+                        ocrText: keepOCRText ? item.ocrText : "",
+                        capturedAt: item.capturedAt
+                    )
+                }
                 return ScanEntry(
                     id: $0.id,
                     timestamp: $0.timestamp,
                     ocrText: keepOCRText ? $0.ocrText : "",
                     thumbnailFileName: nil,
                     isPinned: $0.isPinned,
-                    note: $0.note
+                    note: $0.note,
+                    imageItems: clearedItems
                 )
             }
         }
@@ -132,9 +140,8 @@ struct ScanHistoryCleanupPolicy {
 
     private static func markRemoved(_ entry: ScanEntry, in result: inout Result) {
         result.removedEntries += 1
-        if let fileName = entry.thumbnailFileName {
-            result.removedImages += 1
-            result.imageFileNamesToRemove.append(fileName)
-        }
+        let fileNames = entry.allThumbnailFileNames
+        result.removedImages += fileNames.count
+        result.imageFileNamesToRemove.append(contentsOf: fileNames)
     }
 }
