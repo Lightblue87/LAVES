@@ -33,7 +33,7 @@ jobs:
         run: python scripts/build_sqlite_db.py --json Data/zusatzstoffe.json --out dist/laves.sqlite
 
       - name: Upload data artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: laves-data
           path: |
