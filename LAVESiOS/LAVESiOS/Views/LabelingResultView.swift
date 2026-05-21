@@ -2,6 +2,8 @@ import SwiftUI
 
 struct LabelingResultView: View {
     let result: LabelingCheckResult
+    /// Passed through to allow "Zusatzstoff prüfen" navigation from declaration rows.
+    var additiveStore: AdditiveStore? = nil
     var onRecheckWithDifferentFeedType: (() -> Void)?
     @Environment(\.dismiss) private var dismiss
 
@@ -10,6 +12,8 @@ struct LabelingResultView: View {
             List {
                 overallSection
                 recheckSection
+                imageCoverageSection
+                additiveDeclarationsSection
                 metaSection
                 rulesSection
                 disclaimerSection
@@ -45,6 +49,35 @@ struct LabelingResultView: View {
         }
     }
 
+    @ViewBuilder
+    private var imageCoverageSection: some View {
+        if let items = result.imageItems, !items.isEmpty {
+            Section("Gescannte Bildbereiche") {
+                LabeledContent("Bilder", value: "\(items.count) von \(MultiImageOCRSession.maxImages)")
+                let coveredNames = items.map(\.imageType.displayName).joined(separator: ", ")
+                LabeledContent("Erfasste Bereiche", value: coveredNames)
+
+                let covered = Set(items.map(\.imageType))
+                let missing = OCRImageType.allCases.filter { !covered.contains($0) }
+                if !missing.isEmpty {
+                    LabeledContent("Nicht erfasst", value: missing.map(\.displayName).joined(separator: ", "))
+                        .foregroundStyle(.secondary)
+                }
+
+                // Coverage warnings for location-specific rules
+                let hasBodenOrDeckel = covered.contains(.boden) || covered.contains(.deckel)
+                if !hasBodenOrDeckel {
+                    Label(
+                        "Kein Boden- oder Deckel-Bild – Losnummer/MHD möglicherweise nicht sichtbar.",
+                        systemImage: "exclamationmark.triangle"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                }
+            }
+        }
+    }
+
     private var recheckSection: some View {
         Section {
             if let recheck = onRecheckWithDifferentFeedType {
@@ -54,6 +87,42 @@ struct LabelingResultView: View {
                 } label: {
                     Label("Andere Futtermittelart prüfen", systemImage: "arrow.trianglehead.2.clockwise")
                 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var additiveDeclarationsSection: some View {
+        if let declarations = result.additiveDeclarations, !declarations.isEmpty {
+            Section {
+                ForEach(declarations) { decl in
+                    if let store = additiveStore {
+                        NavigationLink {
+                            AdditiveDeclarationDetailView(
+                                declaration: decl,
+                                additiveStore: store
+                            )
+                        } label: {
+                            AdditiveDeclarationRow(declaration: decl)
+                        }
+                    } else {
+                        AdditiveDeclarationRow(declaration: decl)
+                    }
+                }
+
+                if declarations.contains(where: { $0.confidence.requiresConfirmation }) {
+                    Label(
+                        "Ein oder mehrere Treffer erfordern manuelle Bestätigung.",
+                        systemImage: "exclamationmark.triangle"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                }
+            } header: {
+                Text("Erkannte Zusatzstoffangaben")
+            } footer: {
+                Text("Automatische Erkennung – kein Ersatz für eine amtliche Kontrolle.")
+                    .font(.caption2)
             }
         }
     }
@@ -133,6 +202,145 @@ struct LabelingResultView: View {
     }
 }
 
+// MARK: - Additive Declaration Row
+
+private struct AdditiveDeclarationRow: View {
+    let declaration: AdditiveDeclaration
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: declaration.confidence.icon)
+                .foregroundStyle(confidenceColor)
+                .frame(width: 20)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(declaration.substanceName)
+                        .font(.subheadline)
+                    if let amount = declaration.amount {
+                        Text("–")
+                            .foregroundStyle(.secondary)
+                        Text(amount.displayString)
+                            .font(.subheadline)
+                            .foregroundStyle(.primary)
+                    }
+                }
+                Text(declaration.confidence.label)
+                    .font(.caption)
+                    .foregroundStyle(confidenceColor)
+                if let matched = declaration.matchedAdditive, !matched.eNumber.isEmpty {
+                    Text(matched.eNumber)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private var confidenceColor: Color {
+        switch declaration.confidence {
+        case .exactMatch:    return .green
+        case .exactNoAmount: return .teal
+        case .fuzzyMatch:    return .orange
+        case .noDBMatch:     return .red
+        }
+    }
+}
+
+// MARK: - Additive Declaration Detail View
+
+struct AdditiveDeclarationDetailView: View {
+    let declaration: AdditiveDeclaration
+    @ObservedObject var additiveStore: AdditiveStore
+
+    var body: some View {
+        List {
+            // Parsed declaration
+            Section("Erkannte Angabe") {
+                LabeledContent("Stoff", value: declaration.substanceName)
+                if let amount = declaration.amount {
+                    LabeledContent("Menge", value: amount.displayString)
+                    LabeledContent("Rohtext", value: amount.rawText)
+                } else {
+                    LabeledContent("Menge", value: "Nicht erkannt")
+                }
+                LabeledContent("OCR-Fragment") {
+                    Text(declaration.rawText)
+                        .font(.caption)
+                        .textSelection(.enabled)
+                }
+            }
+
+            // DB match
+            if let additive = declaration.matchedAdditive {
+                Section("Datenbankeintrag") {
+                    if !additive.eNumber.isEmpty {
+                        LabeledContent("Kennnummer", value: additive.eNumber)
+                    }
+                    LabeledContent("Name", value: additive.name)
+                    if !additive.normalizedSpecies.isEmpty {
+                        LabeledContent("Tierarten", value: additive.normalizedSpecies)
+                    }
+                    if let min = additive.minMgKg {
+                        LabeledContent("Min.", value: "\(formatValue(min)) \(additive.unit ?? "mg/kg")")
+                    }
+                    if let max = additive.maxMgKg {
+                        LabeledContent("Max.", value: "\(formatValue(max)) \(additive.unit ?? "mg/kg")")
+                    }
+                    // Within-limits check
+                    if let amount = declaration.amount, let max = additive.maxMgKg {
+                        limitRow(parsedValue: amount.value, max: max, unit: additive.unit ?? amount.unit)
+                    }
+                }
+            } else {
+                Section("Datenbank") {
+                    switch declaration.confidence {
+                    case .fuzzyMatch:
+                        Label("Ähnlicher Treffer – bitte in der Datenbank nachschlagen.",
+                              systemImage: "questionmark.circle")
+                            .foregroundStyle(.orange)
+                    default:
+                        Label("Kein Eintrag gefunden – manuelle Prüfung erforderlich.",
+                              systemImage: "exclamationmark.circle")
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+
+            Section {
+                Text("Automatische Erkennung – kein Ersatz für eine amtliche Kontrolle. Ergebnis muss durch eine finale Bewertung bestätigt werden.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .navigationTitle(declaration.substanceName)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    @ViewBuilder
+    private func limitRow(parsedValue: Double, max: Double, unit: String) -> some View {
+        if parsedValue <= max {
+            Label(
+                "Menge \(formatValue(parsedValue)) \(unit) liegt unter dem Höchstwert (\(formatValue(max)) \(unit)).",
+                systemImage: "checkmark.circle"
+            )
+            .foregroundStyle(.green)
+            .font(.caption)
+        } else {
+            Label(
+                "Menge \(formatValue(parsedValue)) \(unit) überschreitet Höchstwert (\(formatValue(max)) \(unit)) – bitte prüfen!",
+                systemImage: "exclamationmark.triangle.fill"
+            )
+            .foregroundStyle(.red)
+            .font(.caption)
+        }
+    }
+
+    private func formatValue(_ v: Double) -> String {
+        v == v.rounded(.towardZero) && v < 1_000_000 ? "\(Int(v))" : String(format: "%.2f", v)
+    }
+}
+
 // MARK: - Rule Result Row
 
 private struct RuleResultRow: View {
@@ -168,6 +376,7 @@ private struct RuleResultRow: View {
     private var statusColor: Color {
         switch ruleResult.status {
         case .found: return .green
+        case .probablyFound: return .teal
         case .missing: return ruleResult.rule.severity == .critical ? .red : .orange
         case .unclear: return .orange
         case .notApplicable: return .secondary
@@ -235,6 +444,7 @@ struct LabelingRuleDetailView: View {
     private var statusColor: Color {
         switch ruleResult.status {
         case .found: return .green
+        case .probablyFound: return .teal
         case .missing: return ruleResult.rule.severity == .critical ? .red : .orange
         case .unclear: return .orange
         case .notApplicable: return .secondary

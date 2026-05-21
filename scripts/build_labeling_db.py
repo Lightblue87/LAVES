@@ -381,9 +381,14 @@ def _kw(
     weight: float = 1.0,
     language: str = "de",
 ) -> list[tuple]:
-    """Return keyword pattern rows for a rule."""
+    """Return keyword pattern rows for a rule.
+
+    The weight is encoded in the ID so multiple calls with different
+    weights for the same rule/language don't produce duplicate PKs.
+    """
+    w_tag = f"w{int(round(weight * 100)):03d}"
     return [
-        (f"{rule_id}_kw_{language}_{i:03d}", rule_id, "keyword", kw, language, weight, 0)
+        (f"{rule_id}_kw_{language}_{w_tag}_{i:03d}", rule_id, "keyword", kw, language, weight, 0)
         for i, kw in enumerate(keywords)
     ]
 
@@ -395,8 +400,9 @@ def _rx(
     language: str = "de",
 ) -> list[tuple]:
     """Return regex pattern rows for a rule."""
+    w_tag = f"w{int(round(weight * 100)):03d}"
     return [
-        (f"{rule_id}_rx_{language}_{i:03d}", rule_id, "regex", rx, language, weight, 0)
+        (f"{rule_id}_rx_{language}_{w_tag}_{i:03d}", rule_id, "regex", rx, language, weight, 0)
         for i, rx in enumerate(regexes)
     ]
 
@@ -437,45 +443,33 @@ def _build_patterns() -> list[tuple]:
     ], language="other")
 
     # art15_002 – Verantwortlicher Unternehmer
+    # Concrete company/address indicators → found (1.0)
     rows += _kw("art15_002", [
-        "GmbH",
-        "GmbH & Co",
-        "AG ",
-        " KG",
-        " OHG",
-        "e.K.",
-        "Ltd.",
-        "S.A.",
-        "Straße",
-        "Str.",
-        "Weg ",
-        "Platz ",
-        "verantwortlich:",
-        "Hersteller:",
-        "Anschrift:",
+        "GmbH", "GmbH & Co", "AG ", " KG", " OHG", "e.K.", "Ltd.", "S.A.",
+        "Straße", "Str.", "Weg ", "Platz ",
     ])
+    # Section labels only → probablyFound (0.7)
     rows += _kw("art15_002", [
-        "responsible:",
-        "manufactured by",
-        "distributed by",
-        "address:",
-        "supplied by",
-        "Ltd.",
+        "verantwortlich:", "Hersteller:", "Anschrift:",
+    ], weight=0.7)
+    # English: concrete statements → found (1.0)
+    rows += _kw("art15_002", [
+        "manufactured by", "distributed by", "supplied by",
     ], language="en")
+    # English: labels → probablyFound (0.7)
     rows += _kw("art15_002", [
-        "responsable:",
-        "distribué par",
-        "distribue par",
-        "fabriqué par",
-        "fabrique par",
-        "responsabile:",
-        "distribuito da",
-        "indirizzo:",
-        "verantwoordelijk:",
-        "adres:",
-    ], language="other")
+        "responsible:", "address:",
+    ], weight=0.7, language="en")
+    rows += _kw("art15_002", [
+        "fabriqué par", "fabrique par", "prodotto da", "distribuito da",
+        "geproduceerd door",
+    ], weight=0.85, language="other")
+    rows += _kw("art15_002", [
+        "responsable:", "distribué par", "distribue par",
+        "responsabile:", "indirizzo:", "verantwoordelijk:", "adres:",
+    ], weight=0.7, language="other")
     rows += _rx("art15_002", [
-        r"\b\d{5}\s+[A-ZÄÖÜ][a-zäöüß]+\b",
+        r"\b\d{5}\s+[A-ZÄÖÜ][a-zäöüß]+\b",  # German postal code + city
     ])
 
     # art15_003 – Nettomenge
@@ -497,83 +491,77 @@ def _build_patterns() -> list[tuple]:
     ], weight=0.85, language="other")
 
     # art15_004 – Losnummer
+    # Keywords are section labels only → probablyFound (0.7)
+    # Only the regex (which requires an actual alphanumeric code) → found (1.0)
+    # Keywords: section labels → probablyFound (0.7)
     rows += _kw("art15_004", [
-        "Charge",
-        "Los:",
-        "Partie:",
-        "Batch",
-        "LOT ",
-        "L:",
-        "Ch.",
-        "Chargennr",
-        "Losnr",
-        "Partienr",
-    ])
+        "Charge:", "Los:", "Partie:", "Chargennr", "Losnr", "Partienr",
+        "Chargenangabe:", "Kennnummer der Partie", "Losnummer:", "Chargennummer:",
+    ], weight=0.7)
     rows += _kw("art15_004", [
-        "Reference number",
-        "batch number",
-        "lot number",
-        "Batch",
-        "Lot",
-    ], language="en")
+        "Reference number", "batch number", "lot number", "Batch:", "Lot:",
+    ], weight=0.7, language="en")
     rows += _kw("art15_004", [
-        "numero di riferimento",
-        "numero di lotto",
-        "numéro de lot",
-        "numero de lot",
-        "referentienummer",
-    ], language="other")
+        "numero di riferimento", "numero di lotto", "numéro de lot",
+        "numero de lot", "referentienummer",
+    ], weight=0.7, language="other")
+    # Regex: keyword + concrete alphanumeric code containing at least one digit → found (1.0)
+    # \b after keyword prevents matching inside compound words (e.g. "Chargenangabe")
+    # \d requirement prevents matching "Partie: siehe Boden-Aufdruck"
     rows += _rx("art15_004", [
-        r"\b(LOT|L|Charge|Chargen-Nr\.?|Los|Partie)\s?[:\-]?\s?[A-Z0-9\-\/]+\b",
+        r"\b(LOT|L|Charge|Chargen-Nr\.?|Los|Partie)(?!\w)\s?[:\-]?\s?[A-Z0-9\-\/]*\d[A-Z0-9\-\/]*\b",
     ])
 
     # art15_005 – Feuchtegehalt
+    # Keywords: section labels → probablyFound (0.7); regex with value → found (1.0)
     rows += _kw("art15_005", [
-        "Feuchte",
-        "Feuchtigkeit",
-        "Wassergehalt",
-        "Feuchtigkeitsgehalt",
-        "moisture",
-    ])
+        "Feuchte", "Feuchtigkeit", "Wassergehalt", "Feuchtigkeitsgehalt", "moisture",
+    ], weight=0.7)
     rows += _kw("art15_005", [
-        "moisture",
-        "humidity",
-        "water content",
-    ], language="en")
+        "moisture", "humidity", "water content",
+    ], weight=0.7, language="en")
     rows += _kw("art15_005", [
-        "humidité",
-        "humidite",
-        "umidità",
-        "umidita",
-        "vocht",
-        "wilgotność",
-    ], language="other")
+        "humidité", "humidite", "umidità", "umidita", "vocht", "wilgotność",
+    ], weight=0.7, language="other")
     rows += _rx("art15_005", [
         r"\b\d+[,.]?\d*\s*%\s*(Feuchte|Feuchtigkeit|Wasser)\b",
     ])
 
     # art15_006 – Zusatzstoffe
+    # Section label keywords → probablyFound (0.7)
     rows += _kw("art15_006", [
         "Zusatzstoffe",
+        "Zusatzstoff:",    # singular + colon
+        "Zusatzstoff",     # singular
         "Ernährungsphysiologische Zusatzstoffe",
         "Technologische Zusatzstoffe",
         "Zootechnische Zusatzstoffe",
         "Sensorische Zusatzstoffe",
         "additives",
-    ])
+    ], weight=0.7)
+    # Substance amount / E-number patterns → indirect evidence (0.75 → probablyFound)
+    rows += _rx("art15_006", [
+        r"\b\d+[,.]?\d*\s*(mg|IE|IU|µg|g)\s*/\s*kg\b",
+        r"\bE\s*\d{3,4}[a-z]?\b",
+    ], weight=0.75)
+    # Structured declaration: substance name + amount + unit → found (0.85)
+    # Matches: "Taurin 1.000 mg/kg", "Vitamin A 15.000 IE/kg", "E 300 200 mg/kg"
+    # Number formats: integer (1000), thousands with dot (1.000), comma (1,000), space (1 000)
+    # Units: mg/kg, IE/kg, IU/kg, µg/kg, g/kg
+    rows += _rx("art15_006", [
+        # Substance name (min 3-letter word, optionally + 2nd word like "Vitamin A" or "D3")
+        r"[A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß\-]{2,}(?:\s+[A-Za-zÄÖÜäöüß0-9][A-Za-zÄÖÜäöüß0-9\-]*)?"
+        r"\s+\d[\d\.\,\s]{0,9}\s*(?:mg|IE|IU|µg|g)\s*/\s*kg\b",
+        # E-number style: "E 300 200 mg/kg"
+        r"\bE\s*\d{3,4}[a-z]?\s+\d[\d\.\,\s]{0,9}\s*(?:mg|IE|IU|µg|g)\s*/\s*kg\b",
+    ], weight=0.85)
     rows += _kw("art15_006", [
-        "additives",
-        "nutritional additives",
-        "technological additives",
-        "sensory additives",
-        "zootechnical additives",
-    ], language="en")
+        "additives", "nutritional additives", "technological additives",
+        "sensory additives", "zootechnical additives",
+    ], weight=0.7, language="en")
     rows += _kw("art15_006", [
-        "additivi",
-        "additifs",
-        "toevoegingsmiddelen",
-        "dodatki",
-    ], language="other")
+        "additivi", "additifs", "toevoegingsmiddelen", "dodatki",
+    ], weight=0.7, language="other")
 
     # art16_001 – Bezeichnung Einzelfuttermittel (Anhang IV names)
     rows += _kw("art16_001", [
@@ -623,9 +611,10 @@ def _build_patterns() -> list[tuple]:
     _mhd_rx = [
         r"\b(MHD|BBD|mindestens haltbar bis)[:\s]*\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{2,4}\b",
     ]
-    rows += _kw("art16_002", _mhd_kw)
-    rows += _kw("art16_002", _mhd_kw_en, language="en")
-    rows += _kw("art16_002", _mhd_kw_other, language="other")
+    # Keywords: section labels → probablyFound (0.7); date regex → found (1.0)
+    rows += _kw("art16_002", _mhd_kw, weight=0.7)
+    rows += _kw("art16_002", _mhd_kw_en, weight=0.7, language="en")
+    rows += _kw("art16_002", _mhd_kw_other, weight=0.7, language="other")
     rows += _rx("art16_002", _mhd_rx)
 
     # art16_003 – Tierart (single_feed, optional)
@@ -642,12 +631,19 @@ def _build_patterns() -> list[tuple]:
         r"\bvoor\s+(?:[A-Za-zÀ-ÿ\-]+\s+){0,4}(honden|katten)\b",
         r"\bdla\s+(?:[A-Za-zÀ-ÿ\-]+\s+){0,4}(psów|psow|kotów|kotow)\b",
     ]
+    # Concrete species declaration → found (1.0)
     rows += _kw("art16_003", [
         "für Hunde", "für Katzen", "für Rinder", "für Kälber", "für Schweine",
         "für Geflügel", "für Pferde", "für Fische", "für Kaninchen",
         "für Schafe", "für Ziegen", "für Hund", "für Katze",
-        "Tierart:", "Tierkategorie:",
     ])
+    # Section labels → probablyFound (0.7)
+    rows += _kw("art16_003", ["Tierart:", "Tierkategorie:"], weight=0.7)
+    # Compound species words → probablyFound (0.8)
+    rows += _kw("art16_003", [
+        "Katzenfutter", "Hundefutter", "Rinderfutter", "Geflügelfutter",
+        "Pferdefutter", "Kaninchenfutter", "Katzenahrung", "Hundenahrung",
+    ], weight=0.8)
     rows += _rx("art16_003", _animal_de_rx)
     rows += _kw("art16_003", [
         "for dogs", "for cats", "for cattle", "for calves", "for pigs",
@@ -664,38 +660,33 @@ def _build_patterns() -> list[tuple]:
     # art17_002_* – Mindesthaltbarkeit (all compound feeds)
     for _, suffix in _COMPOUND_FEEDS:
         rule_id = f"art17_002_{suffix}"
-        rows += _kw(rule_id, _mhd_kw)
-        rows += _kw(rule_id, _mhd_kw_en, language="en")
-        rows += _kw(rule_id, _mhd_kw_other, language="other")
+        rows += _kw(rule_id, _mhd_kw, weight=0.7)
+        rows += _kw(rule_id, _mhd_kw_en, weight=0.7, language="en")
+        rows += _kw(rule_id, _mhd_kw_other, weight=0.7, language="other")
         rows += _rx(rule_id, _mhd_rx)
 
     # art17_001_* – Tierart
-    _tierart_kw = [
-        "für Hunde",
-        "für Katzen",
-        "für Rinder",
-        "für Kälber",
-        "für Schweine",
-        "für Geflügel",
-        "für Pferde",
-        "für Fische",
-        "für Kaninchen",
-        "für Schafe",
-        "für Ziegen",
-        "für Hund",
-        "für Katze",
-        "Hunde und Katzen",
-        "Tierart:",
-        "Tierkategorie:",
+    _tierart_concrete = [
+        "für Hunde", "für Katzen", "für Rinder", "für Kälber", "für Schweine",
+        "für Geflügel", "für Pferde", "für Fische", "für Kaninchen",
+        "für Schafe", "für Ziegen", "für Hund", "für Katze", "Hunde und Katzen",
+    ]
+    _tierart_labels = ["Tierart:", "Tierkategorie:"]
+    _tierart_compound = [
+        "Katzenfutter", "Hundefutter", "Rinderfutter", "Geflügelfutter",
+        "Pferdefutter", "Kaninchenfutter", "Katzenahrung", "Hundenahrung",
     ]
     for _, suffix in _COMPOUND_FEEDS:
-        rows += _kw(f"art17_001_{suffix}", _tierart_kw)
+        rows += _kw(f"art17_001_{suffix}", _tierart_concrete)           # found (1.0)
+        rows += _kw(f"art17_001_{suffix}", _tierart_labels, weight=0.7) # probablyFound
+        rows += _kw(f"art17_001_{suffix}", _tierart_compound, weight=0.8)  # probablyFound
         rows += _rx(f"art17_001_{suffix}", _animal_de_rx)
         rows += _kw(f"art17_001_{suffix}", [
             "for dogs", "for cats", "for cattle", "for calves", "for pigs",
             "for poultry", "for horses", "for fish", "for rabbits",
-            "feeding recommendation:",
         ], language="en")
+        rows += _kw(f"art17_001_{suffix}", ["feeding recommendation:"],
+                    weight=0.7, language="en")
         rows += _rx(f"art17_001_{suffix}", _animal_en_rx, language="en")
         rows += _kw(f"art17_001_{suffix}", [
             "per cani", "per gatti", "pour chiens", "pour chats",
@@ -703,82 +694,69 @@ def _build_patterns() -> list[tuple]:
         ], language="other")
         rows += _rx(f"art17_001_{suffix}", _animal_other_rx, language="other")
 
-    # art17_003_* – Zusammensetzung
+    # art17_003_* – Zusammensetzung (section labels → probablyFound 0.7)
     _zusammen_kw = [
-        "Zusammensetzung",
-        "Zutaten:",
-        "Inhaltsstoffe",
-        "ingredients",
+        "Zusammensetzung", "Zutaten:", "Inhaltsstoffe", "ingredients",
     ]
     for _, suffix in _COMPOUND_FEEDS:
-        rows += _kw(f"art17_003_{suffix}", _zusammen_kw)
+        rows += _kw(f"art17_003_{suffix}", _zusammen_kw, weight=0.7)
         rows += _kw(f"art17_003_{suffix}", [
-            "composition",
-            "ingredients",
-        ], language="en")
+            "composition", "ingredients",
+        ], weight=0.7, language="en")
         rows += _kw(f"art17_003_{suffix}", [
-            "composizione",
-            "composition",
-            "samenstelling",
-            "skład",
-            "sklad",
-        ], language="other")
+            "composizione", "composition", "samenstelling", "skład", "sklad",
+        ], weight=0.7, language="other")
 
     # art17_004_* – Analytische Bestandteile
+    # Regex: constituent name + numeric value → found (1.0)
+    _analyt_value_rx = [
+        r"\b(Rohprotein|Rohfett|Rohfaser|Rohasche|Feuchtigkeit|Feuchte|Calcium)"
+        r"\s+\d+[,.]?\d*\s*%?\b",
+        r"\b(crude protein|crude fat|crude fibre|crude ash|moisture)"
+        r"\s+\d+[,.]?\d*\s*%?\b",
+    ]
+    # Plain section label keywords → probablyFound (0.7)
     _analyt_kw = [
-        "Analytische Bestandteile",
-        "Rohprotein",
-        "Rohfaser",
-        "Rohfett",
-        "Rohasche",
-        "Feuchtigkeit",
-        "analytical constituents",
-        "crude protein",
-        "crude fibre",
+        "Analytische Bestandteile", "Rohprotein", "Rohfaser", "Rohfett",
+        "Rohasche", "Feuchtigkeit", "analytical constituents",
+        "crude protein", "crude fibre",
     ]
     for _, suffix in _COMPOUND_FEEDS:
-        rows += _kw(f"art17_004_{suffix}", _analyt_kw)
+        rows += _rx(f"art17_004_{suffix}", _analyt_value_rx)
+        rows += _kw(f"art17_004_{suffix}", _analyt_kw, weight=0.7)
         rows += _kw(f"art17_004_{suffix}", [
-            "analytical constituents",
-            "crude protein",
-            "crude fat",
-            "crude fibre",
-            "crude ash",
-            "moisture",
-        ], language="en")
+            "analytical constituents", "crude protein", "crude fat",
+            "crude fibre", "crude ash", "moisture",
+        ], weight=0.7, language="en")
         rows += _kw(f"art17_004_{suffix}", [
-            "componenti analitici",
-            "constituants analytiques",
-            "analytische bestanddelen",
-            "składniki analityczne",
-            "skladniki analityczne",
-            "proteina grezza",
-            "matieres grasses",
-            "teneur en matières grasses",
-        ], language="other")
+            "componenti analitici", "constituants analytiques",
+            "analytische bestanddelen", "składniki analityczne",
+            "skladniki analityczne", "proteina grezza",
+            "matieres grasses", "teneur en matières grasses",
+        ], weight=0.7, language="other")
 
-    # art17_005_* – Hersteller
-    _hersteller_kw = [
-        "Hergestellt von",
-        "Hersteller:",
-        "Hergestellt durch",
-        "erzeugt von",
-        "produziert von",
-        "manufactured by",
+    # art17_005_* – Hersteller / Vertrieb
+    # Declaration phrases + company type indicators combined → found (1.0)
+    _hersteller_found = [
+        "Hergestellt von", "Hergestellt durch", "erzeugt von", "produziert von",
+        "hergestellt für", "im Auftrag von", "importiert durch", "importiert von",
+        "GmbH", "GmbH & Co", " KG", " OHG", "AG ", "e.K.", "Ltd.", "S.A.",
     ]
+    # Section labels only → probablyFound (0.7)
+    _hersteller_labels = ["Hersteller:", "Vertrieb:", "Inverkehrbringer:"]
     for _, suffix in _COMPOUND_FEEDS:
-        rows += _kw(f"art17_005_{suffix}", _hersteller_kw)
+        rows += _kw(f"art17_005_{suffix}", _hersteller_found)
+        rows += _kw(f"art17_005_{suffix}", _hersteller_labels, weight=0.7)
+        rows += _rx(f"art17_005_{suffix}", [
+            r"\b\d{5}\s+[A-ZÄÖÜ][a-zäöüß]+\b",  # postal code + city → found
+        ])
         rows += _kw(f"art17_005_{suffix}", [
-            "manufactured by",
-            "produced by",
-            "distributed by",
+            "manufactured by", "produced by", "distributed by",
+            "imported by", "on behalf of",
         ], language="en")
         rows += _kw(f"art17_005_{suffix}", [
-            "fabriqué par",
-            "fabrique par",
-            "prodotto da",
-            "distribuito da",
-            "geproduceerd door",
+            "fabriqué par", "fabrique par", "prodotto da",
+            "distribuito da", "geproduceerd door",
         ], language="other")
 
     return rows

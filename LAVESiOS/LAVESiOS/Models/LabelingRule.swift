@@ -54,15 +54,17 @@ enum LabelingRuleSeverity: String, Hashable {
 // MARK: - Check Results
 
 enum RuleCheckStatus: String, Hashable {
-    case found          // Pattern matched in OCR text
-    case missing        // No pattern matched
-    case unclear        // Low-confidence match
-    case notApplicable  // Rule doesn't apply to this feed type
-    case notCheckable   // OCR too uncertain or empty
+    case found           // Strong match (weight ≥ 0.85)
+    case probablyFound   // Indirect evidence (0.6 ≤ weight < 0.85)
+    case missing         // No pattern matched
+    case unclear         // Negative (exclusion) pattern hit
+    case notApplicable   // Rule doesn't apply to this feed type
+    case notCheckable    // OCR too uncertain or empty
 
     var title: String {
         switch self {
         case .found: return "Gefunden"
+        case .probablyFound: return "Wahrscheinlich gefunden"
         case .missing: return "Nicht gefunden"
         case .unclear: return "Unklar"
         case .notApplicable: return "Nicht zutreffend"
@@ -73,6 +75,7 @@ enum RuleCheckStatus: String, Hashable {
     var icon: String {
         switch self {
         case .found: return "checkmark.circle.fill"
+        case .probablyFound: return "checkmark.circle"
         case .missing: return "xmark.circle.fill"
         case .unclear: return "questionmark.circle.fill"
         case .notApplicable: return "minus.circle"
@@ -116,6 +119,11 @@ struct LabelingCheckResult {
     let dbVersion: String
     let databaseInfo: LabelingDatabaseInfo?
     let ocrText: String
+    /// Per-image OCR items when the check was based on a multi-image session. Nil for single-image checks.
+    let imageItems: [OCRImageItem]?
+    /// Structured additive declarations parsed from the OCR text. Nil when no
+    /// Zusatzstoff declarations were detected or no additive DB was available.
+    let additiveDeclarations: [AdditiveDeclaration]?
 }
 
 // MARK: - Database Info

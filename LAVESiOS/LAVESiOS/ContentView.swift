@@ -36,6 +36,7 @@ struct ContentView: View {
 
             IngredientScanView(
                 scanHistory: scanHistory,
+                labelingStore: labelingStore,
                 selectedTab: $selectedTab,
                 selectedAdditiveScan: $selectedAdditiveScan,
                 selectedLabelingScan: $selectedLabelingScan
@@ -48,7 +49,8 @@ struct ContentView: View {
             LabelingCheckView(
                 labelingStore: labelingStore,
                 scanHistory: scanHistory,
-                selectedScanEntry: $selectedLabelingScan
+                selectedScanEntry: $selectedLabelingScan,
+                additiveStore: store
             )
                 .tabItem {
                     Label("Kennzeichnung", systemImage: "tag.circle")

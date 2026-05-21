@@ -97,7 +97,9 @@ class TestFeedTypeDetection:
 # ------------------------------------------------------------------
 
 LOT_PATTERNS = [
-    r"\b(LOT|L|Charge|Chargen-Nr\.?|Los|Partie)\s?[:\-]?\s?[A-Z0-9\-\/]+\b",
+    # \b after keyword: prevents matching inside compound words (e.g. "Chargenangabe")
+    # \d requirement: prevents matching reference redirects ("Partie: siehe Boden-Aufdruck")
+    r"\b(LOT|L|Charge|Chargen-Nr\.?|Los|Partie)(?!\w)\s?[:\-]?\s?[A-Z0-9\-\/]*\d[A-Z0-9\-\/]*\b",
 ]
 
 
@@ -111,8 +113,9 @@ class TestLotNumberPattern:
             ("Partie: P2024/05", True),
             ("Chargen-Nr. 20240501-001", True),
             ("Los: 4567", True),
-            # "Chargenangabe" starts with "Charge" at a word boundary — legitimately matches
-            ("Chargenangabe: A2024", True),
+            # "Chargenangabe" is a compound word — "Charge" has no \b after it here.
+            # The keyword "Chargenangabe:" at weight 0.7 still gives probablyFound.
+            ("Chargenangabe: A2024", False),
             ("CHOLESTEROL 200mg", False),
             ("Produktbeschreibung ohne Angabe", False),
         ],
@@ -279,7 +282,101 @@ class TestAdditivesDetection:
 
 
 # ------------------------------------------------------------------
-# 8. OCR error resilience  (mostly pure Python; one test uses DB)
+# 8. Additive declaration patterns  (pure Python + DB)
+# ------------------------------------------------------------------
+
+# Structured additive declaration patterns (weight 0.85 → .found quality).
+# Substance name + numeric amount + unit — no section header required.
+ADDITIVE_STRUCTURED_PATTERNS = [
+    # Substance name (min 3-letter word, optionally + 2nd word) + amount + unit
+    r"[A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß\-]{2,}(?:\s+[A-Za-zÄÖÜäöüß0-9][A-Za-zÄÖÜäöüß0-9\-]*)?"
+    r"\s+\d[\d\.\,\s]{0,9}\s*(?:mg|IE|IU|µg|g)\s*/\s*kg\b",
+    # E-number style: "E 300 200 mg/kg"
+    r"\bE\s*\d{3,4}[a-z]?\s+\d[\d\.\,\s]{0,9}\s*(?:mg|IE|IU|µg|g)\s*/\s*kg\b",
+]
+
+
+class TestAdditiveDeclarationPatterns:
+    """Tests for structured additive declaration regex (weight 0.85 → .found in labeling check).
+
+    Verifies that:
+    - All required number formats (1000, 1.000, 1,000, 1 000, 15.000) match.
+    - All required units (mg/kg, IE/kg, IU/kg) match.
+    - Section-header-only text does NOT produce a high-weight match.
+    - Standalone amount without substance name does NOT match.
+    """
+
+    @pytest.mark.parametrize(
+        "text,expected",
+        [
+            ("Taurin 1.000mg/kg", True),             # dot-thousands, no space before unit
+            ("Taurin 1.000 mg/kg", True),            # dot-thousands, space before unit
+            ("Taurine 1000 mg/kg", True),             # English variant, plain integer
+            ("Vitamin A 15.000 IE/kg", True),         # two-word name, dot-thousands, IE/kg
+            ("E 300 200 mg/kg", True),                # E-number style
+            ("Taurin 1,000 mg/kg", True),             # comma-thousands separator
+            ("Vitamin D3 200 IU/kg", True),           # IU unit (English)
+            ("Biotin 150 µg/kg", True),               # µg/kg unit
+            # Negative cases
+            ("Zusatzstoffe", False),                  # section header only, no amount
+            ("Rohprotein 18 %", False),               # % unit, not mg/kg
+            ("1.000 mg/kg", False),                   # no substance name before amount
+        ],
+    )
+    def test_structured_additive_pattern(self, text: str, expected: bool) -> None:
+        result = any(regex_match(p, text) for p in ADDITIVE_STRUCTURED_PATTERNS)
+        assert result == expected, (
+            f"Structured additive pattern on '{text}' expected {expected}"
+        )
+
+    def test_structured_pattern_exists_in_db(
+        self, fresh_db: sqlite3.Connection
+    ) -> None:
+        """art15_006 must have at least one pattern with confidence_weight >= 0.85."""
+        count = fresh_db.execute(
+            "SELECT COUNT(*) FROM labeling_rule_patterns "
+            "WHERE rule_id = 'art15_006' AND confidence_weight >= 0.85"
+        ).fetchone()[0]
+        assert count > 0, "art15_006 must have at least one high-weight (≥0.85) pattern"
+
+    def test_taurin_matches_high_weight_pattern_in_db(
+        self, fresh_db: sqlite3.Connection
+    ) -> None:
+        """'Taurin 1.000 mg/kg' must match a ≥0.85 pattern for art15_006."""
+        patterns = fresh_db.execute(
+            "SELECT pattern_type, pattern_value FROM labeling_rule_patterns "
+            "WHERE rule_id = 'art15_006' AND confidence_weight >= 0.85"
+        ).fetchall()
+        assert patterns, "No high-weight patterns found for art15_006"
+        text = "Taurin 1.000 mg/kg"
+        matched = any(
+            regex_match(pvalue, text)
+            for ptype, pvalue in patterns
+            if ptype == "regex"
+        )
+        assert matched, f"'Taurin 1.000 mg/kg' must match a ≥0.85 art15_006 pattern"
+
+    def test_additive_heading_only_still_probablyfound(
+        self, fresh_db: sqlite3.Connection
+    ) -> None:
+        """Section header 'Zusatzstoffe' alone must NOT match a ≥0.85 pattern."""
+        patterns = fresh_db.execute(
+            "SELECT pattern_type, pattern_value FROM labeling_rule_patterns "
+            "WHERE rule_id = 'art15_006' AND confidence_weight >= 0.85"
+        ).fetchall()
+        text = "Zusatzstoffe"
+        matched = any(
+            (ptype == "keyword" and keyword_match(pvalue, text))
+            or (ptype == "regex" and regex_match(pvalue, text))
+            for ptype, pvalue in patterns
+        )
+        assert not matched, (
+            "'Zusatzstoffe' alone must not match any ≥0.85 art15_006 pattern"
+        )
+
+
+# ------------------------------------------------------------------
+# 9. OCR error resilience  (mostly pure Python; one test uses DB)
 # ------------------------------------------------------------------
 
 
@@ -483,3 +580,217 @@ class TestRelevantRuleCount:
                 f"and '{seen[rule_id]}'"
             )
             seen[rule_id] = ftid
+
+
+# ------------------------------------------------------------------
+# 11. Real-world OCR label fragments  (requires DB)
+# ------------------------------------------------------------------
+
+
+class TestRealWorldLabels:
+    """Regression tests for confirmed false-negative gaps.
+
+    Each test uses a real-world OCR fragment and asserts that the relevant
+    rule pattern now matches it.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _db(self, fresh_db: sqlite3.Connection) -> None:
+        self.con = fresh_db
+
+    def _patterns(self, rule_id: str) -> list[tuple[str, str, str]]:
+        return self.con.execute(
+            "SELECT pattern_type, pattern_value, pattern_language "
+            "FROM labeling_rule_patterns WHERE rule_id = ?",
+            (rule_id,),
+        ).fetchall()
+
+    def _matches(self, rule_id: str, text: str) -> bool:
+        for ptype, pvalue, _lang in self._patterns(rule_id):
+            if ptype == "keyword" and keyword_match(pvalue, text):
+                return True
+            if ptype == "regex" and regex_match(pvalue, text):
+                return True
+        return False
+
+    # --- Tierart: compound animal species words ---
+
+    def test_katzenfutter_implies_tierart_pet(self) -> None:
+        assert self._matches("art17_001_pet", "Katzenfutter Adult"), (
+            "'Katzenfutter' must match art17_001_pet (Tierart)"
+        )
+
+    def test_premium_katzenfutter_implies_tierart_pet(self) -> None:
+        assert self._matches(
+            "art17_001_pet", "Premium-Katzenfutter für ausgewachsene Katzen"
+        )
+
+    def test_hundefutter_implies_tierart_pet(self) -> None:
+        assert self._matches("art17_001_pet", "Hundefutter für Welpen")
+
+    def test_katzenfutter_implies_tierart_single_feed(self) -> None:
+        assert self._matches("art16_003", "Katzenfutter Adult"), (
+            "'Katzenfutter' must also match art16_003 (Tierart, single_feed)"
+        )
+
+    # --- Hersteller: Vertrieb / Inverkehrbringer variants ---
+
+    def test_vertrieb_implies_hersteller_pet(self) -> None:
+        assert self._matches(
+            "art17_005_pet", "Vertrieb: Fountain GmbH & Co. KG"
+        ), "'Vertrieb:' must match art17_005_pet (Hersteller)"
+
+    def test_inverkehrbringer_implies_hersteller(self) -> None:
+        assert self._matches(
+            "art17_005_complete",
+            "Inverkehrbringer: Müller GmbH, 30123 Hannover",
+        )
+
+    def test_im_auftrag_implies_hersteller(self) -> None:
+        assert self._matches("art17_005_pet", "im Auftrag von Petfood Corp.")
+
+    def test_hergestellt_fuer_implies_hersteller(self) -> None:
+        assert self._matches(
+            "art17_005_complete", "hergestellt für Tiernahrung AG"
+        )
+
+    # --- Zusatzstoffe: singular, mg/kg, E-numbers ---
+
+    def test_zusatzstoff_singular_colon(self) -> None:
+        assert self._matches("art15_006", "Zusatzstoff: Taurin 1.000 mg/kg"), (
+            "'Zusatzstoff:' singular must match art15_006"
+        )
+
+    def test_mg_per_kg_implies_additives(self) -> None:
+        assert self._matches("art15_006", "Vitamin E 150 mg/kg"), (
+            "'mg/kg' pattern must match art15_006"
+        )
+
+    def test_e_number_implies_additives(self) -> None:
+        assert self._matches(
+            "art15_006", "E 306 (Tocopherolextrakte) 200 mg/kg"
+        ), "E-number pattern must match art15_006"
+
+    def test_ie_per_kg_implies_additives(self) -> None:
+        assert self._matches("art15_006", "Vitamin A 15.000 IE/kg")
+
+
+# ------------------------------------------------------------------
+# 12. Pattern quality: keyword-only vs regex (concrete value)
+# These tests pin the semantic contract:
+#   keyword match alone → probablyFound (no high-quality regex match)
+#   regex match present → found
+# ------------------------------------------------------------------
+
+
+class TestPatternQuality:
+    """Verifies that 'reference redirect' and heading-only texts do NOT
+    produce a high-quality (regex) match, while concrete values do.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _db(self, fresh_db: sqlite3.Connection) -> None:
+        self.con = fresh_db
+
+    def _patterns(self, rule_id: str) -> list[tuple[str, str, str, float]]:
+        return self.con.execute(
+            "SELECT pattern_type, pattern_value, pattern_language, confidence_weight "
+            "FROM labeling_rule_patterns WHERE rule_id = ?",
+            (rule_id,),
+        ).fetchall()
+
+    def _any_match(self, rule_id: str, text: str) -> bool:
+        for ptype, pvalue, _lang, _w in self._patterns(rule_id):
+            if ptype == "keyword" and keyword_match(pvalue, text):
+                return True
+            if ptype == "regex" and regex_match(pvalue, text):
+                return True
+        return False
+
+    def _regex_match(self, rule_id: str, text: str) -> bool:
+        """True only if a REGEX pattern matches (→ found-quality)."""
+        for ptype, pvalue, _lang, _w in self._patterns(rule_id):
+            if ptype == "regex" and regex_match(pvalue, text):
+                return True
+        return False
+
+    def _high_weight_match(self, rule_id: str, text: str, threshold: float = 0.85) -> bool:
+        """True if any pattern with weight >= threshold matches."""
+        for ptype, pvalue, _lang, w in self._patterns(rule_id):
+            matched = (
+                (ptype == "keyword" and keyword_match(pvalue, text))
+                or (ptype == "regex" and regex_match(pvalue, text))
+            )
+            if matched and w >= threshold:
+                return True
+        return False
+
+    # --- Losnummer: reference redirect must not produce a found-quality match ---
+
+    def test_lot_reference_redirect_no_regex_match(self) -> None:
+        """'Partie: siehe Boden-Aufdruck' has a keyword but no concrete code."""
+        text = "Kennnummer der Partie: siehe Boden-Aufdruck"
+        assert self._any_match("art15_004", text), "keyword should still match"
+        assert not self._regex_match("art15_004", text), (
+            "reference redirect must not match the lot-number regex"
+        )
+
+    def test_lot_losnummer_heading_no_regex(self) -> None:
+        """'Losnummer: lagern' must not regex-match (no alphanumeric code)."""
+        text = "Partie-/Losnummer: lagern"
+        assert not self._regex_match("art15_004", text)
+
+    def test_lot_concrete_code_regex_found(self) -> None:
+        """'Charge: A2024-09-01' must produce a regex match → found."""
+        assert self._regex_match("art15_004", "Charge: A2024-09-01")
+
+    def test_lot_lot_number_regex_found(self) -> None:
+        assert self._regex_match("art15_004", "LOT 20240901A")
+
+    # --- Analytische Bestandteile: value needed for found quality ---
+
+    def test_analytical_with_value_regex_found(self) -> None:
+        """'Rohprotein 17,8 %' must match the analytical value regex."""
+        assert self._regex_match("art17_004_pet", "Rohprotein 17,8 %")
+
+    def test_analytical_without_percent_regex_found(self) -> None:
+        """OCR may drop '%' — value without '%' should still regex-match."""
+        assert self._regex_match(
+            "art17_004_pet", "Inhaltsstoffe Rohprotein 17,8 Rohfett 5,68"
+        )
+
+    def test_analytical_heading_only_no_regex(self) -> None:
+        """Just the section header without any value → keyword only."""
+        assert self._any_match("art17_004_pet", "Analytische Bestandteile")
+        assert not self._regex_match("art17_004_pet", "Analytische Bestandteile")
+
+    # --- Zusatzstoffe: heading alone is keyword-only ---
+
+    def test_additive_heading_only_keyword_not_regex(self) -> None:
+        assert self._any_match("art15_006", "Zusatzstoffe")
+        assert not self._regex_match("art15_006", "Zusatzstoffe")
+
+    def test_additive_with_amount_regex_match(self) -> None:
+        assert self._regex_match("art15_006", "Zusatzstoff: Taurin 1.000 mg/kg")
+
+    # --- Hersteller/Unternehmer: company name → found; label alone → not ---
+
+    def test_operator_full_address_high_weight(self) -> None:
+        """Postal code + city should trigger high-weight regex for art15_002."""
+        text = "Vertrieb: petsway GmbH, Tich 320, 48361 Beelen"
+        assert self._high_weight_match("art15_002", text), (
+            "Full address with GmbH must produce a ≥0.85 match in art15_002"
+        )
+
+    def test_operator_vertrieb_only_low_weight(self) -> None:
+        """'Vertrieb:' alone should only produce a low-weight keyword match."""
+        text = "Vertrieb:"
+        assert self._any_match("art17_005_pet", text)
+        assert not self._high_weight_match("art17_005_pet", text), (
+            "'Vertrieb:' label alone must not be a ≥0.85 match"
+        )
+
+    def test_hersteller_gmbh_high_weight(self) -> None:
+        """'Vertrieb: Fountain GmbH & Co. KG' must produce ≥0.85 in art17_005."""
+        text = "Vertrieb: Fountain GmbH & Co. KG"
+        assert self._high_weight_match("art17_005_pet", text)

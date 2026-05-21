@@ -12,7 +12,15 @@ struct LabelingCheckService {
         feedType: LabelingFeedType,
         feedTypeConfidence: Double,
         rules: [LabelingRule],
-        dbInfo: LabelingDatabaseInfo?
+        dbInfo: LabelingDatabaseInfo?,
+        /// Rule-ID prefixes for which `.missing` results are downgraded to `.notCheckable`
+        /// due to missing packaging area images (see `LabelCoverageAnalyzer`).
+        forcedNotCheckableRulePrefixes: Set<String> = [],
+        imageItems: [OCRImageItem]? = nil,
+        /// Structured additive declarations parsed from the OCR text by `AdditiveDeclarationParser`.
+        /// When at least one declaration has `countsAsFound == true`, art15_006 is upgraded
+        /// from `.probablyFound` to `.found`.
+        additiveDeclarations: [AdditiveDeclaration] = []
     ) -> LabelingCheckResult {
         guard ocrText.count >= minOCRLength else {
             let results = rules.map { rule in
@@ -28,12 +36,58 @@ struct LabelingCheckService {
                 checkedAt: Date(),
                 dbVersion: dbInfo?.version ?? "–",
                 databaseInfo: dbInfo,
-                ocrText: ocrText
+                ocrText: ocrText,
+                imageItems: imageItems,
+                additiveDeclarations: additiveDeclarations.isEmpty ? nil : additiveDeclarations
             )
         }
 
-        let ruleResults = rules.map { rule in
+        var ruleResults = rules.map { rule in
             checkRule(rule, in: ocrText)
+        }
+
+        // Apply coverage-based notCheckable overrides (only for .missing results)
+        if !forcedNotCheckableRulePrefixes.isEmpty {
+            ruleResults = ruleResults.map { result in
+                guard result.status == .missing,
+                      forcedNotCheckableRulePrefixes.contains(where: { result.rule.id.hasPrefix($0) }) else {
+                    return result
+                }
+                return RuleCheckResult(
+                    rule: result.rule,
+                    status: .notCheckable,
+                    matchedText: nil,
+                    matchedLanguage: nil,
+                    confidence: 0,
+                    note: LabelCoverageAnalyzer.missingAreaNote
+                )
+            }
+        }
+
+        // Upgrade art15_006 from .probablyFound → .found when the parser confirmed
+        // a structured declaration with a DB-matched substance (e.g. "Taurin 1.000 mg/kg").
+        let hasConfirmedDeclaration = additiveDeclarations.contains(where: \.countsAsFound)
+        if hasConfirmedDeclaration {
+            let firstFound = additiveDeclarations.first(where: \.countsAsFound)
+            ruleResults = ruleResults.map { result in
+                guard result.rule.id == "art15_006",
+                      result.status == .probablyFound else { return result }
+                var upgradeNote = "Strukturierte Zusatzstoffdeklaration erkannt"
+                if let decl = firstFound {
+                    let amountStr = decl.amount?.displayString ?? ""
+                    upgradeNote += " (\"\(decl.substanceName)\(amountStr.isEmpty ? "" : " \(amountStr)")\")."
+                } else {
+                    upgradeNote += "."
+                }
+                return RuleCheckResult(
+                    rule: result.rule,
+                    status: .found,
+                    matchedText: result.matchedText,
+                    matchedLanguage: result.matchedLanguage,
+                    confidence: 0.85,
+                    note: upgradeNote
+                )
+            }
         }
 
         let overall = overallStatus(from: ruleResults)
@@ -46,7 +100,9 @@ struct LabelingCheckService {
             checkedAt: Date(),
             dbVersion: dbInfo?.version ?? "–",
             databaseInfo: dbInfo,
-            ocrText: ocrText
+            ocrText: ocrText,
+            imageItems: imageItems,
+            additiveDeclarations: additiveDeclarations.isEmpty ? nil : additiveDeclarations
         )
     }
 
@@ -93,13 +149,13 @@ struct LabelingCheckService {
         }
 
         let confidence = found.weight
-        let status: RuleCheckStatus = confidence >= 0.7 ? .found : .unclear
+        let status: RuleCheckStatus = confidence >= 0.85 ? .found : .probablyFound
         var notes: [String] = []
         if found.language != "de" {
             notes.append("Hinweis wurde in \(languageName(found.language)) gefunden.")
         }
-        if status == .unclear {
-            notes.append("Treffer mit niedriger Sicherheit erkannt. OCR-Text und Etikett bitte manuell prüfen.")
+        if status == .probablyFound {
+            notes.append("Indirekter Treffer erkannt – Etikett bitte manuell bestätigen.")
         }
         return RuleCheckResult(rule: rule, status: status, matchedText: found.text,
                                matchedLanguage: found.language, confidence: confidence,
@@ -117,11 +173,16 @@ struct LabelingCheckService {
         }
         if criticalMissing { return .auffaellig }
 
+        // Critical rule only indirectly confirmed → uncertain
+        let hasCriticalUncertain = results.contains {
+            $0.rule.severity == .critical
+                && ($0.status == .probablyFound || $0.status == .unclear)
+        }
         let hasUnclear = results.contains { $0.status == .unclear }
         let hasWarningMissing = results.contains {
             $0.rule.severity == .warning && $0.status == .missing
         }
-        if hasUnclear || hasWarningMissing { return .unklar }
+        if hasCriticalUncertain || hasUnclear || hasWarningMissing { return .unklar }
 
         return .keineAuffaelligkeit
     }

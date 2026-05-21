@@ -62,7 +62,7 @@ final class ScanHistoryImageStore {
     }
 
     func stats(for entries: [ScanEntry]) -> ScanHistoryStats {
-        let referenced = Set(entries.compactMap(\.thumbnailFileName))
+        let referenced = Set(entries.flatMap(\.allThumbnailFileNames))
         let files = imageFiles() ?? []
         let totalBytes = files.reduce(Int64(0)) { partial, url in
             partial + fileSize(url)
