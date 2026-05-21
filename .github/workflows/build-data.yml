@@ -1,0 +1,42 @@
+name: Build LAVES Data
+
+on:
+  workflow_dispatch:
+  schedule:
+    # GitHub schedule times are UTC. This runs every Monday at 03:17 UTC.
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  build-data:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install pipeline dependencies
+        run: python -m pip install -r requirements-pipeline.txt
+
+      - name: Download PDFs and rebuild JSON
+        run: python Data/bvl_update_pipeline.py
+
+      - name: Build SQLite database
+        run: python scripts/build_sqlite_db.py --json Data/zusatzstoffe.json --out dist/laves.sqlite
+
+      - name: Upload data artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: laves-data
+          path: |
+            Data/zusatzstoffe.json
+            dist/laves.sqlite
+          retention-days: 30
