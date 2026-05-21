@@ -1,4 +1,3 @@
-import PhotosUI
 import SwiftUI
 import UIKit
 
@@ -6,8 +5,7 @@ struct LabelingCheckView: View {
     @ObservedObject var labelingStore: LabelingRuleStore
     @ObservedObject var scanHistory: ScanHistoryService
     @Binding var selectedScanEntry: ScanEntry?
-
-    @StateObject private var session = MultiImageOCRSession()
+    @ObservedObject var additiveStore: AdditiveStore
 
     @State private var selectedFeedType: LabelingFeedType?
     @State private var detectionResult: LabelingFeedTypeDetector.DetectionResult?
@@ -17,8 +15,6 @@ struct LabelingCheckView: View {
     @State private var isChecking = false
     @State private var checkError: String?
     @State private var isResultPresented = false
-    @State private var isAddImagePresented = false
-    @State private var savedEntry: ScanEntry?
 
     private let detector = LabelingFeedTypeDetector()
 
@@ -26,7 +22,7 @@ struct LabelingCheckView: View {
         NavigationStack {
             Form {
                 databaseSection
-                imageStripSection
+                loadedScanSection
                 feedTypeSection
                 actionSection
                 historySection
@@ -43,30 +39,23 @@ struct LabelingCheckView: View {
             }
             .sheet(isPresented: $isResultPresented) {
                 if let result = checkResult {
-                    LabelingResultView(result: result) {
+                    LabelingResultView(
+                        result: result,
+                        additiveStore: additiveStore
+                    ) {
                         needsManualSelection = true
                         selectedFeedType = nil
                     }
                 }
             }
-            .sheet(isPresented: $isAddImagePresented) {
-                AddImageSheet(
-                    defaultType: OCRImageType.suggestedType(forIndex: session.imageCount)
-                ) { image, type in
-                    Task { await addImage(image, type: type) }
-                }
-            }
             .onAppear {
-                if let entry = selectedScanEntry, session.isEmpty {
+                if let entry = selectedScanEntry {
                     applyScanEntry(entry)
                 }
             }
             .onChange(of: selectedScanEntry) { _, entry in
                 guard let entry else { return }
                 applyScanEntry(entry)
-            }
-            .onChange(of: session.imageCount) { _, _ in
-                updateFeedTypeDetection()
             }
             .task { await labelingStore.load() }
         }
@@ -110,109 +99,66 @@ struct LabelingCheckView: View {
         }
     }
 
-    private var imageStripSection: some View {
+    @ViewBuilder
+    private var loadedScanSection: some View {
         Section {
-            // Thumbnail strip or empty state
-            if session.isEmpty {
-                VStack(spacing: 10) {
-                    Image(systemName: "photo.stack")
+            if let entry = selectedScanEntry {
+                LabeledContent("Scan",
+                               value: entry.timestamp.formatted(date: .abbreviated, time: .shortened))
+                LabeledContent("Bilder", value: "\(entry.imageCount)")
+
+                if let result = entry.analysisResult {
+                    let areas = result.labelingAreas.detectedNames
+                    if !areas.isEmpty {
+                        LabeledContent("Erkannte Bereiche", value: areas.joined(separator: ", "))
+                    }
+                    if !result.detectedSpeciesHints.isEmpty {
+                        LabeledContent("Tierart",
+                                       value: result.detectedSpeciesHints.joined(separator: ", "))
+                    }
+                    ForEach(result.qualityWarnings, id: \.self) { warning in
+                        Label(warning, systemImage: "exclamationmark.triangle")
+                            .font(.caption).foregroundStyle(.orange)
+                    }
+                }
+
+                if !entry.ocrText.isEmpty {
+                    DisclosureGroup("Erkannter Text (\(entry.ocrText.count) Zeichen)") {
+                        Text(entry.ocrText)
+                            .font(.footnote)
+                            .textSelection(.enabled)
+                    }
+                }
+
+                Button(role: .destructive) { resetCheck() } label: {
+                    Label("Scan entfernen", systemImage: "xmark.circle")
+                        .font(.caption)
+                }
+            } else {
+                VStack(spacing: 8) {
+                    Image(systemName: "doc.text.magnifyingglass")
                         .font(.largeTitle)
                         .foregroundStyle(.secondary)
-                    Text("Noch keine Bilder hinzugefügt")
+                    Text("Kein Scan geladen")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                    Text("Fotografiere das Etikett aus verschiedenen Winkeln für eine genaue Prüfung.")
+                    Text("Scanne ein Etikett im Scan-Tab oder lade einen vorhandenen Scan aus der Scan-Historie.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
-            } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        ForEach(session.images) { img in
-                            ImageThumbnailCard(
-                                sessionImage: img,
-                                onDelete: { session.remove(img) },
-                                onTypeChange: { newType in session.updateType(for: img, to: newType) }
-                            )
-                        }
-                    }
-                    .padding(.vertical, 4)
-                    .padding(.horizontal, 2)
-                }
             }
-
-            // Progress + add button row
-            HStack {
-                if !session.isEmpty {
-                    Text("\(session.imageCount) von \(MultiImageOCRSession.maxImages) Bildern")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text("Bis zu \(MultiImageOCRSession.maxImages) Bilder möglich")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                if session.canAddMore {
-                    Button {
-                        isAddImagePresented = true
-                    } label: {
-                        Label("Bild hinzufügen", systemImage: "plus.circle.fill")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                }
-            }
-
-            // OCR scanning indicator
-            if session.isScanning {
-                HStack(spacing: 8) {
-                    ProgressView()
-                    Text("Texterkennung läuft…").foregroundStyle(.secondary)
-                }
-                .font(.subheadline)
-            }
-
-            if let error = session.scanError {
-                Text(error).foregroundStyle(.red).font(.caption)
-            }
-
-            // Merged OCR text disclosure
-            if !session.isEmpty && !session.mergedOCRText.isEmpty {
-                DisclosureGroup("Erkannter Text (\(session.mergedOCRText.count) Zeichen)") {
-                    Text(session.mergedOCRText)
-                        .font(.footnote)
-                        .textSelection(.enabled)
-                }
-            }
-
-            if session.isEmpty {
-                Text("Oder lade einen vorhandenen Scan aus der Scan-Historie (unten).")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
         } header: {
-            Text("Etikett-Bilder")
-        } footer: {
-            if !session.isEmpty {
-                Button(role: .destructive) {
-                    resetSession()
-                } label: {
-                    Label("Neue Prüfung starten", systemImage: "arrow.counterclockwise")
-                        .font(.caption)
-                }
-            }
+            Text("Geladener Scan")
         }
     }
 
     private var feedTypeSection: some View {
         Section("Futtermittelart") {
-            if session.isEmpty || session.mergedOCRText.isEmpty {
-                Text("Bitte zuerst Bilder hinzufügen.")
+            if selectedScanEntry == nil || selectedScanEntry?.ocrText.isEmpty == true {
+                Text("Bitte zuerst einen Scan laden.")
                     .foregroundStyle(.secondary)
                     .font(.caption)
             } else if let detection = detectionResult, !needsManualSelection {
@@ -268,16 +214,11 @@ struct LabelingCheckView: View {
                     Label("Kennzeichnung prüfen", systemImage: "checkmark.shield")
                 }
             }
-            .disabled(!canCheck || isChecking || session.isScanning)
+            .disabled(!canCheck || isChecking)
         }
 
         if let result = checkResult {
             Section {
-                if let saved = savedEntry {
-                    Label("Scan in Historie gespeichert (\(saved.imageCount) \(saved.imageCount == 1 ? "Bild" : "Bilder"))", systemImage: "checkmark.circle")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
                 Button {
                     isResultPresented = true
                 } label: {
@@ -331,85 +272,78 @@ struct LabelingCheckView: View {
     }
 
     private var canCheck: Bool {
-        let text = session.mergedOCRText
+        guard let entry = selectedScanEntry else { return false }
+        let text = entry.ocrText
         return !text.isEmpty && text.count >= LabelingCheckService.minOCRLength && activeFeedType != nil
     }
 
-    private func addImage(_ image: UIImage, type: OCRImageType) async {
-        await session.addImage(image, type: type)
-    }
-
     private func applyScanEntry(_ entry: ScanEntry) {
-        scanHistory.loadIntoSession(session, from: entry)
         detectionResult = nil
         selectedFeedType = nil
         needsManualSelection = false
         checkResult = nil
         checkError = nil
-        savedEntry = nil
-        updateFeedTypeDetection()
+        updateFeedTypeDetection(for: entry)
     }
 
-    private func updateFeedTypeDetection() {
-        let merged = session.mergedOCRText
-        guard !merged.isEmpty else {
+    private func updateFeedTypeDetection(for entry: ScanEntry) {
+        let text = entry.ocrText
+        guard !text.isEmpty else {
             detectionResult = nil
             ambiguousCandidates = []
             return
         }
-        let candidates = detector.detectAmbiguous(in: merged, feedTypes: labelingStore.feedTypes)
+        let candidates = detector.detectAmbiguous(in: text, feedTypes: labelingStore.feedTypes)
         ambiguousCandidates = candidates
         detectionResult = nil
         needsManualSelection = false
-        if let unambiguous = detector.detect(in: merged, feedTypes: labelingStore.feedTypes) {
+        if let unambiguous = detector.detect(in: text, feedTypes: labelingStore.feedTypes) {
             detectionResult = unambiguous
         } else if !candidates.isEmpty {
             needsManualSelection = true
         }
     }
 
-    private func resetSession() {
-        session.reset()
+    private func resetCheck() {
+        selectedScanEntry = nil
         detectionResult = nil
         selectedFeedType = nil
         needsManualSelection = false
         checkResult = nil
         checkError = nil
-        savedEntry = nil
-        selectedScanEntry = nil
     }
 
     private func runCheck() async {
-        guard let feedType = activeFeedType else { return }
+        guard let entry = selectedScanEntry,
+              let feedType = activeFeedType else { return }
         isChecking = true
         checkResult = nil
         checkError = nil
-        savedEntry = nil
         defer { isChecking = false }
-
-        // Persist to history
-        if scanHistory.settings.isHistoryEnabled && !session.isEmpty {
-            savedEntry = scanHistory.add(session: session)
-        }
 
         let rules = await labelingStore.rules(forFeedType: feedType.id)
         let feedConfidence = selectedFeedType != nil ? 1.0 : (detectionResult?.confidence ?? 0)
-        let mergedText = session.mergedOCRText
+        let mergedText = entry.ocrText
 
-        let notCheckablePrefixes = LabelCoverageAnalyzer.forcedNotCheckableRulePrefixes(
-            coveredTypes: session.coveredImageTypes,
-            imageCount: session.imageCount
-        )
-
-        let imageItemsSnapshot = session.images.map { img in
-            OCRImageItem(
-                id: img.id,
-                imageType: img.imageType,
-                thumbnailFileName: nil,
-                ocrText: img.ocrText,
-                capturedAt: img.capturedAt
+        // Coverage: use pre-computed result if available; fall back to imageItems
+        let notCheckablePrefixes: Set<String>
+        if let prefixes = entry.analysisResult?.imageCoverage.forcedNotCheckableRulePrefixes {
+            notCheckablePrefixes = Set(prefixes)
+        } else if let items = entry.imageItems, !items.isEmpty {
+            let covered = Set(items.map(\.imageType))
+            notCheckablePrefixes = LabelCoverageAnalyzer.forcedNotCheckableRulePrefixes(
+                coveredTypes: covered,
+                imageCount: items.count
             )
+        } else {
+            notCheckablePrefixes = []
         }
+
+        // Parse structured additive declarations (offline, no network)
+        let declarations = AdditiveDeclarationParser.parse(
+            text: mergedText,
+            additives: additiveStore.additives
+        )
 
         checkResult = LabelingCheckService.check(
             ocrText: mergedText,
@@ -418,7 +352,8 @@ struct LabelingCheckView: View {
             rules: rules,
             dbInfo: labelingStore.dbInfo,
             forcedNotCheckableRulePrefixes: notCheckablePrefixes,
-            imageItems: session.imageCount > 1 ? imageItemsSnapshot : nil
+            imageItems: entry.imageItems,
+            additiveDeclarations: declarations
         )
         isResultPresented = true
     }
@@ -439,160 +374,6 @@ struct LabelingCheckView: View {
         iso.formatOptions = [.withInternetDateTime]
         guard let date = isoFrac.date(from: value) ?? iso.date(from: value) else { return value }
         return date.formatted(date: .abbreviated, time: .shortened)
-    }
-}
-
-// MARK: - Image Thumbnail Card
-
-private struct ImageThumbnailCard: View {
-    let sessionImage: SessionImage
-    let onDelete: () -> Void
-    let onTypeChange: (OCRImageType) -> Void
-
-    @State private var isTypePickerPresented = false
-
-    var body: some View {
-        VStack(spacing: 5) {
-            ZStack(alignment: .topTrailing) {
-                thumbnailView
-                    .frame(width: 84, height: 84)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-
-                Button(action: onDelete) {
-                    Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(.white, .red)
-                        .font(.title3)
-                        .shadow(radius: 1)
-                }
-                .offset(x: 7, y: -7)
-            }
-
-            Button {
-                isTypePickerPresented = true
-            } label: {
-                HStack(spacing: 3) {
-                    Image(systemName: sessionImage.imageType.systemImage)
-                    Text(sessionImage.imageType.displayName)
-                }
-                .font(.caption2)
-                .lineLimit(1)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-        }
-        .frame(width: 98)
-        .confirmationDialog(
-            "Bildtyp wählen",
-            isPresented: $isTypePickerPresented,
-            titleVisibility: .visible
-        ) {
-            ForEach(OCRImageType.allCases) { type in
-                Button(type.displayName) { onTypeChange(type) }
-            }
-            Button("Abbrechen", role: .cancel) {}
-        }
-    }
-
-    @ViewBuilder
-    private var thumbnailView: some View {
-        if let img = sessionImage.image {
-            Image(uiImage: img)
-                .resizable()
-                .scaledToFill()
-        } else {
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color.secondary.opacity(0.15))
-                .overlay {
-                    VStack(spacing: 4) {
-                        Image(systemName: "photo.fill").foregroundStyle(.secondary)
-                        Text("Kein Bild").font(.caption2).foregroundStyle(.secondary)
-                    }
-                }
-        }
-    }
-}
-
-// MARK: - Add Image Sheet
-
-private struct AddImageSheet: View {
-    @Environment(\.dismiss) private var dismiss
-
-    @State private var selectedPhoto: PhotosPickerItem?
-    @State private var capturedImage: UIImage?
-    @State private var isCameraPresented = false
-    @State private var selectedType: OCRImageType
-
-    let defaultType: OCRImageType
-    let onAdd: (UIImage, OCRImageType) -> Void
-
-    init(defaultType: OCRImageType, onAdd: @escaping (UIImage, OCRImageType) -> Void) {
-        self.defaultType = defaultType
-        self.onAdd = onAdd
-        _selectedType = State(initialValue: defaultType)
-    }
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("Bildtyp") {
-                    Picker("Typ", selection: $selectedType) {
-                        ForEach(OCRImageType.allCases) { type in
-                            Label(type.displayName, systemImage: type.systemImage).tag(type)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                }
-
-                Section("Aufnahme") {
-                    Button {
-                        isCameraPresented = true
-                    } label: {
-                        Label("Foto aufnehmen", systemImage: "camera")
-                    }
-                    .disabled(!UIImagePickerController.isSourceTypeAvailable(.camera))
-
-                    PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                        Label("Bild aus Bibliothek", systemImage: "photo.on.rectangle")
-                    }
-                }
-
-                if let img = capturedImage {
-                    Section("Vorschau") {
-                        Image(uiImage: img)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(maxHeight: 220)
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
-
-                        Button {
-                            onAdd(img, selectedType)
-                            dismiss()
-                        } label: {
-                            Label("Bild hinzufügen", systemImage: "plus.circle.fill")
-                        }
-                        .bold()
-                    }
-                }
-            }
-            .navigationTitle("Bild hinzufügen")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Abbrechen") { dismiss() }
-                }
-            }
-            .onChange(of: selectedPhoto) { _, item in
-                Task {
-                    guard let item,
-                          let data = try? await item.loadTransferable(type: Data.self),
-                          let image = UIImage(data: data) else { return }
-                    capturedImage = image
-                }
-            }
-            .sheet(isPresented: $isCameraPresented) {
-                CameraPicker(image: $capturedImage).ignoresSafeArea()
-            }
-        }
     }
 }
 

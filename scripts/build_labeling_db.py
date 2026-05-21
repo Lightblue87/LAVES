@@ -544,6 +544,17 @@ def _build_patterns() -> list[tuple]:
         r"\b\d+[,.]?\d*\s*(mg|IE|IU|µg|g)\s*/\s*kg\b",
         r"\bE\s*\d{3,4}[a-z]?\b",
     ], weight=0.75)
+    # Structured declaration: substance name + amount + unit → found (0.85)
+    # Matches: "Taurin 1.000 mg/kg", "Vitamin A 15.000 IE/kg", "E 300 200 mg/kg"
+    # Number formats: integer (1000), thousands with dot (1.000), comma (1,000), space (1 000)
+    # Units: mg/kg, IE/kg, IU/kg, µg/kg, g/kg
+    rows += _rx("art15_006", [
+        # Substance name (min 3-letter word, optionally + 2nd word like "Vitamin A" or "D3")
+        r"[A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß\-]{2,}(?:\s+[A-Za-zÄÖÜäöüß0-9][A-Za-zÄÖÜäöüß0-9\-]*)?"
+        r"\s+\d[\d\.\,\s]{0,9}\s*(?:mg|IE|IU|µg|g)\s*/\s*kg\b",
+        # E-number style: "E 300 200 mg/kg"
+        r"\bE\s*\d{3,4}[a-z]?\s+\d[\d\.\,\s]{0,9}\s*(?:mg|IE|IU|µg|g)\s*/\s*kg\b",
+    ], weight=0.85)
     rows += _kw("art15_006", [
         "additives", "nutritional additives", "technological additives",
         "sensory additives", "zootechnical additives",

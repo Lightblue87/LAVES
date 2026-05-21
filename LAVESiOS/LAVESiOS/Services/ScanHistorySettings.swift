@@ -3,13 +3,27 @@ import Foundation
 struct ScanEntry: Identifiable, Codable, Hashable {
     let id: UUID
     let timestamp: Date
+    /// Merged OCR text (single image or deduplicated multi-image merge).
     let ocrText: String
+    /// File name of the primary (first) thumbnail image. Nil when deleted or not yet stored.
     let thumbnailFileName: String?
     var isPinned: Bool
     var note: String?
+    /// Per-image OCR items for multi-image entries. Nil for legacy single-image entries.
+    var imageItems: [OCRImageItem]?
+    /// Central analysis result produced by the Scan tab. Nil for legacy entries.
+    var analysisResult: ScanAnalysisResult?
 
-    var ocrSnippet: String {
-        String(ocrText.prefix(200))
+    var ocrSnippet: String { String(ocrText.prefix(200)) }
+    var isMultiImage: Bool { (imageItems?.count ?? 0) > 1 }
+    var imageCount: Int { imageItems?.count ?? (thumbnailFileName != nil ? 1 : 0) }
+
+    /// All thumbnail file names across the entry (deduped; multi-image entries include all per-image files).
+    var allThumbnailFileNames: [String] {
+        if let items = imageItems, !items.isEmpty {
+            return items.compactMap(\.thumbnailFileName)
+        }
+        return thumbnailFileName.map { [$0] } ?? []
     }
 
     init(
@@ -18,7 +32,9 @@ struct ScanEntry: Identifiable, Codable, Hashable {
         ocrText: String,
         thumbnailFileName: String?,
         isPinned: Bool = false,
-        note: String? = nil
+        note: String? = nil,
+        imageItems: [OCRImageItem]? = nil,
+        analysisResult: ScanAnalysisResult? = nil
     ) {
         self.id = id
         self.timestamp = timestamp
@@ -26,6 +42,8 @@ struct ScanEntry: Identifiable, Codable, Hashable {
         self.thumbnailFileName = thumbnailFileName
         self.isPinned = isPinned
         self.note = note
+        self.imageItems = imageItems
+        self.analysisResult = analysisResult
     }
 
     init(from decoder: Decoder) throws {
@@ -38,6 +56,8 @@ struct ScanEntry: Identifiable, Codable, Hashable {
         thumbnailFileName = try container.decodeIfPresent(String.self, forKey: .thumbnailFileName)
         isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
         note = try container.decodeIfPresent(String.self, forKey: .note)
+        imageItems = try container.decodeIfPresent([OCRImageItem].self, forKey: .imageItems)
+        analysisResult = try container.decodeIfPresent(ScanAnalysisResult.self, forKey: .analysisResult)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -48,6 +68,8 @@ struct ScanEntry: Identifiable, Codable, Hashable {
         try container.encodeIfPresent(thumbnailFileName, forKey: .thumbnailFileName)
         try container.encode(isPinned, forKey: .isPinned)
         try container.encodeIfPresent(note, forKey: .note)
+        try container.encodeIfPresent(imageItems, forKey: .imageItems)
+        try container.encodeIfPresent(analysisResult, forKey: .analysisResult)
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -57,6 +79,8 @@ struct ScanEntry: Identifiable, Codable, Hashable {
         case thumbnailFileName
         case isPinned
         case note
+        case imageItems
+        case analysisResult
         case legacyOCRSnippet = "ocrSnippet"
     }
 }

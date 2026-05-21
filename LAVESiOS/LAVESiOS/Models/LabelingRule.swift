@@ -121,6 +121,9 @@ struct LabelingCheckResult {
     let ocrText: String
     /// Per-image OCR items when the check was based on a multi-image session. Nil for single-image checks.
     let imageItems: [OCRImageItem]?
+    /// Structured additive declarations parsed from the OCR text. Nil when no
+    /// Zusatzstoff declarations were detected or no additive DB was available.
+    let additiveDeclarations: [AdditiveDeclaration]?
 }
 
 // MARK: - Database Info

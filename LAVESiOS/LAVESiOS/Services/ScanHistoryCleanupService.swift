@@ -61,8 +61,16 @@ final class ScanHistoryService: ObservableObject {
     /// Each session image is stored as a thumbnail; the merged OCR text is stored on the entry.
     @discardableResult
     func add(session: MultiImageOCRSession) -> ScanEntry {
+        add(session: session, analysis: nil)
+    }
+
+    /// Persists a `MultiImageOCRSession` with a pre-computed `ScanAnalysisResult` to history.
+    /// Use this overload from the Scan tab, which produces the analysis before saving.
+    @discardableResult
+    func add(session: MultiImageOCRSession, analysis: ScanAnalysisResult?) -> ScanEntry {
         guard settings.isHistoryEnabled else {
-            return ScanEntry(ocrText: session.mergedOCRText, thumbnailFileName: nil)
+            return ScanEntry(ocrText: session.mergedOCRText, thumbnailFileName: nil,
+                             analysisResult: analysis)
         }
 
         var fileNamesByID: [UUID: String] = [:]
@@ -81,7 +89,8 @@ final class ScanHistoryService: ObservableObject {
             timestamp: Date(),
             ocrText: session.mergedOCRText,
             thumbnailFileName: firstFileName,
-            imageItems: imageItems.isEmpty ? nil : imageItems
+            imageItems: imageItems.isEmpty ? nil : imageItems,
+            analysisResult: analysis
         )
         entries.insert(entry, at: 0)
         cleanup(reason: .addedEntry)

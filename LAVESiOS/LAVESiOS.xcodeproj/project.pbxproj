@@ -37,10 +37,15 @@
 		9A000001000000000000005B /* Services/ScanHistoryCleanupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000061 /* Services/ScanHistoryCleanupService.swift */; };
 		9A000001000000000000005C /* Views/ScanHistoryViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000062 /* Views/ScanHistoryViews.swift */; };
 		9A0000010000000000000063 /* ScanHistoryCleanupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000064 /* ScanHistoryCleanupTests.swift */; };
+		9A0000010000000000000080 /* ScanArchitectureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000081 /* ScanArchitectureTests.swift */; };
 		9A0000010000000000000070 /* Models/OCRModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000074 /* Models/OCRModels.swift */; };
 		9A0000010000000000000071 /* Services/MultiImageOCRSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000075 /* Services/MultiImageOCRSession.swift */; };
 		9A0000010000000000000072 /* Services/OCRDocumentAssembler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000076 /* Services/OCRDocumentAssembler.swift */; };
 		9A0000010000000000000073 /* Services/LabelCoverageAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000077 /* Services/LabelCoverageAnalyzer.swift */; };
+		9A0000010000000000000078 /* Models/AdditiveDeclaration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A000001000000000000007A /* Models/AdditiveDeclaration.swift */; };
+		9A0000010000000000000079 /* Services/AdditiveDeclarationParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A000001000000000000007B /* Services/AdditiveDeclarationParser.swift */; };
+		9A000001000000000000007C /* Models/ScanAnalysisResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A000001000000000000007E /* Models/ScanAnalysisResult.swift */; };
+		9A000001000000000000007D /* Services/ScanAnalysisService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A000001000000000000007F /* Services/ScanAnalysisService.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -86,10 +91,15 @@
 		9A0000010000000000000061 /* Services/ScanHistoryCleanupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/ScanHistoryCleanupService.swift; sourceTree = "<group>"; };
 		9A0000010000000000000062 /* Views/ScanHistoryViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/ScanHistoryViews.swift; sourceTree = "<group>"; };
 		9A0000010000000000000064 /* ScanHistoryCleanupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanHistoryCleanupTests.swift; sourceTree = "<group>"; };
+		9A0000010000000000000081 /* ScanArchitectureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanArchitectureTests.swift; sourceTree = "<group>"; };
 		9A0000010000000000000074 /* Models/OCRModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models/OCRModels.swift; sourceTree = "<group>"; };
 		9A0000010000000000000075 /* Services/MultiImageOCRSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/MultiImageOCRSession.swift; sourceTree = "<group>"; };
 		9A0000010000000000000076 /* Services/OCRDocumentAssembler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/OCRDocumentAssembler.swift; sourceTree = "<group>"; };
 		9A0000010000000000000077 /* Services/LabelCoverageAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/LabelCoverageAnalyzer.swift; sourceTree = "<group>"; };
+		9A000001000000000000007A /* Models/AdditiveDeclaration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models/AdditiveDeclaration.swift; sourceTree = "<group>"; };
+		9A000001000000000000007B /* Services/AdditiveDeclarationParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/AdditiveDeclarationParser.swift; sourceTree = "<group>"; };
+		9A000001000000000000007E /* Models/ScanAnalysisResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models/ScanAnalysisResult.swift; sourceTree = "<group>"; };
+		9A000001000000000000007F /* Services/ScanAnalysisService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/ScanAnalysisService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -123,6 +133,7 @@
 			isa = PBXGroup;
 			children = (
 				9A0000010000000000000064 /* ScanHistoryCleanupTests.swift */,
+				9A0000010000000000000081 /* ScanArchitectureTests.swift */,
 			);
 			path = LAVESiOSTests;
 			sourceTree = "<group>";
@@ -163,6 +174,10 @@
 				9A0000010000000000000075 /* Services/MultiImageOCRSession.swift */,
 				9A0000010000000000000076 /* Services/OCRDocumentAssembler.swift */,
 				9A0000010000000000000077 /* Services/LabelCoverageAnalyzer.swift */,
+				9A000001000000000000007A /* Models/AdditiveDeclaration.swift */,
+				9A000001000000000000007B /* Services/AdditiveDeclarationParser.swift */,
+				9A000001000000000000007E /* Models/ScanAnalysisResult.swift */,
+				9A000001000000000000007F /* Services/ScanAnalysisService.swift */,
 			);
 			path = LAVESiOS;
 			sourceTree = "<group>";
@@ -309,6 +324,10 @@
 				9A0000010000000000000071 /* Services/MultiImageOCRSession.swift in Sources */,
 				9A0000010000000000000072 /* Services/OCRDocumentAssembler.swift in Sources */,
 				9A0000010000000000000073 /* Services/LabelCoverageAnalyzer.swift in Sources */,
+				9A0000010000000000000078 /* Models/AdditiveDeclaration.swift in Sources */,
+				9A0000010000000000000079 /* Services/AdditiveDeclarationParser.swift in Sources */,
+				9A000001000000000000007C /* Models/ScanAnalysisResult.swift in Sources */,
+				9A000001000000000000007D /* Services/ScanAnalysisService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -317,6 +336,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				9A0000010000000000000063 /* ScanHistoryCleanupTests.swift in Sources */,
+				9A0000010000000000000080 /* ScanArchitectureTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

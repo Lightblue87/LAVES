@@ -282,7 +282,101 @@ class TestAdditivesDetection:
 
 
 # ------------------------------------------------------------------
-# 8. OCR error resilience  (mostly pure Python; one test uses DB)
+# 8. Additive declaration patterns  (pure Python + DB)
+# ------------------------------------------------------------------
+
+# Structured additive declaration patterns (weight 0.85 → .found quality).
+# Substance name + numeric amount + unit — no section header required.
+ADDITIVE_STRUCTURED_PATTERNS = [
+    # Substance name (min 3-letter word, optionally + 2nd word) + amount + unit
+    r"[A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß\-]{2,}(?:\s+[A-Za-zÄÖÜäöüß0-9][A-Za-zÄÖÜäöüß0-9\-]*)?"
+    r"\s+\d[\d\.\,\s]{0,9}\s*(?:mg|IE|IU|µg|g)\s*/\s*kg\b",
+    # E-number style: "E 300 200 mg/kg"
+    r"\bE\s*\d{3,4}[a-z]?\s+\d[\d\.\,\s]{0,9}\s*(?:mg|IE|IU|µg|g)\s*/\s*kg\b",
+]
+
+
+class TestAdditiveDeclarationPatterns:
+    """Tests for structured additive declaration regex (weight 0.85 → .found in labeling check).
+
+    Verifies that:
+    - All required number formats (1000, 1.000, 1,000, 1 000, 15.000) match.
+    - All required units (mg/kg, IE/kg, IU/kg) match.
+    - Section-header-only text does NOT produce a high-weight match.
+    - Standalone amount without substance name does NOT match.
+    """
+
+    @pytest.mark.parametrize(
+        "text,expected",
+        [
+            ("Taurin 1.000mg/kg", True),             # dot-thousands, no space before unit
+            ("Taurin 1.000 mg/kg", True),            # dot-thousands, space before unit
+            ("Taurine 1000 mg/kg", True),             # English variant, plain integer
+            ("Vitamin A 15.000 IE/kg", True),         # two-word name, dot-thousands, IE/kg
+            ("E 300 200 mg/kg", True),                # E-number style
+            ("Taurin 1,000 mg/kg", True),             # comma-thousands separator
+            ("Vitamin D3 200 IU/kg", True),           # IU unit (English)
+            ("Biotin 150 µg/kg", True),               # µg/kg unit
+            # Negative cases
+            ("Zusatzstoffe", False),                  # section header only, no amount
+            ("Rohprotein 18 %", False),               # % unit, not mg/kg
+            ("1.000 mg/kg", False),                   # no substance name before amount
+        ],
+    )
+    def test_structured_additive_pattern(self, text: str, expected: bool) -> None:
+        result = any(regex_match(p, text) for p in ADDITIVE_STRUCTURED_PATTERNS)
+        assert result == expected, (
+            f"Structured additive pattern on '{text}' expected {expected}"
+        )
+
+    def test_structured_pattern_exists_in_db(
+        self, fresh_db: sqlite3.Connection
+    ) -> None:
+        """art15_006 must have at least one pattern with confidence_weight >= 0.85."""
+        count = fresh_db.execute(
+            "SELECT COUNT(*) FROM labeling_rule_patterns "
+            "WHERE rule_id = 'art15_006' AND confidence_weight >= 0.85"
+        ).fetchone()[0]
+        assert count > 0, "art15_006 must have at least one high-weight (≥0.85) pattern"
+
+    def test_taurin_matches_high_weight_pattern_in_db(
+        self, fresh_db: sqlite3.Connection
+    ) -> None:
+        """'Taurin 1.000 mg/kg' must match a ≥0.85 pattern for art15_006."""
+        patterns = fresh_db.execute(
+            "SELECT pattern_type, pattern_value FROM labeling_rule_patterns "
+            "WHERE rule_id = 'art15_006' AND confidence_weight >= 0.85"
+        ).fetchall()
+        assert patterns, "No high-weight patterns found for art15_006"
+        text = "Taurin 1.000 mg/kg"
+        matched = any(
+            regex_match(pvalue, text)
+            for ptype, pvalue in patterns
+            if ptype == "regex"
+        )
+        assert matched, f"'Taurin 1.000 mg/kg' must match a ≥0.85 art15_006 pattern"
+
+    def test_additive_heading_only_still_probablyfound(
+        self, fresh_db: sqlite3.Connection
+    ) -> None:
+        """Section header 'Zusatzstoffe' alone must NOT match a ≥0.85 pattern."""
+        patterns = fresh_db.execute(
+            "SELECT pattern_type, pattern_value FROM labeling_rule_patterns "
+            "WHERE rule_id = 'art15_006' AND confidence_weight >= 0.85"
+        ).fetchall()
+        text = "Zusatzstoffe"
+        matched = any(
+            (ptype == "keyword" and keyword_match(pvalue, text))
+            or (ptype == "regex" and regex_match(pvalue, text))
+            for ptype, pvalue in patterns
+        )
+        assert not matched, (
+            "'Zusatzstoffe' alone must not match any ≥0.85 art15_006 pattern"
+        )
+
+
+# ------------------------------------------------------------------
+# 9. OCR error resilience  (mostly pure Python; one test uses DB)
 # ------------------------------------------------------------------
 
 
