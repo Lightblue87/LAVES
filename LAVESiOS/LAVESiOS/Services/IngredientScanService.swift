@@ -7,10 +7,33 @@ struct IngredientScanResult {
     let matches: [AdditiveMatch]
 }
 
+enum MatchConfidence {
+    case sicher          // matched via E-number
+    case wahrscheinlich  // matched via name (≥ 8 chars)
+    case unsicher        // matched via short name (< 8 chars)
+
+    var label: String {
+        switch self {
+        case .sicher: return "E-Nr."
+        case .wahrscheinlich: return "Name"
+        case .unsicher: return "Unsicher"
+        }
+    }
+}
+
 struct AdditiveMatch: Identifiable, Hashable {
     let id = UUID()
     let additive: Additive
     let matchedText: String
+    let confidence: MatchConfidence
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+
+    static func == (lhs: AdditiveMatch, rhs: AdditiveMatch) -> Bool {
+        lhs.id == rhs.id
+    }
 }
 
 struct DetectedAnimal: Hashable {
@@ -79,12 +102,13 @@ struct IngredientScanService {
             let name = normalize(additive.name)
 
             if !eNumber.isEmpty && containsENumber(eNumber, in: normalizedText) {
-                append(additive: additive, matchedText: additive.eNumber, seen: &seen, matches: &candidateMatches)
+                append(additive: additive, matchedText: additive.eNumber, confidence: .sicher, seen: &seen, matches: &candidateMatches)
                 continue
             }
 
             if name.count >= 4 && normalizedText.contains(name) {
-                append(additive: additive, matchedText: additive.name, seen: &seen, matches: &candidateMatches)
+                let confidence: MatchConfidence = name.count >= 8 ? .wahrscheinlich : .unsicher
+                append(additive: additive, matchedText: additive.name, confidence: confidence, seen: &seen, matches: &candidateMatches)
             }
         }
 
@@ -174,13 +198,14 @@ struct IngredientScanService {
     private func append(
         additive: Additive,
         matchedText: String,
+        confidence: MatchConfidence,
         seen: inout Set<String>,
         matches: inout [AdditiveMatch]
     ) {
         let key = "\(additive.eNumber)|\(additive.name)|\(additive.normalizedSpecies)"
         guard !seen.contains(key) else { return }
         seen.insert(key)
-        matches.append(AdditiveMatch(additive: additive, matchedText: matchedText))
+        matches.append(AdditiveMatch(additive: additive, matchedText: matchedText, confidence: confidence))
     }
 
     private func containsToken(_ token: String, in text: String) -> Bool {

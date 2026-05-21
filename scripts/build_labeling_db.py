@@ -15,7 +15,7 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 
 SCHEMA = """
-PRAGMA journal_mode = WAL;
+PRAGMA journal_mode = DELETE;
 
 CREATE TABLE IF NOT EXISTS labeling_regulations (
     id TEXT PRIMARY KEY, title TEXT NOT NULL, celex TEXT,
@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS labeling_rules (
 CREATE TABLE IF NOT EXISTS labeling_rule_patterns (
     id TEXT PRIMARY KEY, rule_id TEXT NOT NULL,
     pattern_type TEXT NOT NULL, pattern_value TEXT NOT NULL,
+    pattern_language TEXT NOT NULL DEFAULT 'de',
     confidence_weight REAL NOT NULL DEFAULT 1.0,
     is_negative_pattern INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (rule_id) REFERENCES labeling_rules(id)
@@ -93,13 +94,20 @@ FEED_TYPES = [
         "complete_feed",
         "Alleinfuttermittel",
         "Mischfuttermittel für vollständige Ernährung",
-        "Alleinfuttermittel,Allein-Futtermittel,Alleinfutter,Alleinfutter für,complete pet food",
+        (
+            "Alleinfuttermittel,Allein-Futtermittel,Alleinfutter,Alleinfutter für,"
+            "complete pet food,complete feed,alimento completo,aliment complet,volledig diervoeder"
+        ),
     ),
     (
         "complementary_feed",
         "Ergänzungsfuttermittel",
         "Mischfuttermittel mit hohem Anteil bestimmter Stoffe",
-        "Ergänzungsfuttermittel,Ergaenzungsfuttermittel,Ergänzungsfutter,complementary pet food",
+        (
+            "Ergänzungsfuttermittel,Ergaenzungsfuttermittel,Ergänzungsfutter,"
+            "complementary pet food,complementary feed,alimento complementare,aliment complémentaire,"
+            "aanvullend diervoeder"
+        ),
     ),
     (
         "compound_feed",
@@ -367,18 +375,28 @@ ALL_RULES: list[dict] = _ART15_RULES + _ART16_RULES + _build_art17_rules()
 # Patterns
 # ---------------------------------------------------------------------------
 
-def _kw(rule_id: str, keywords: list[str], weight: float = 1.0) -> list[tuple]:
+def _kw(
+    rule_id: str,
+    keywords: list[str],
+    weight: float = 1.0,
+    language: str = "de",
+) -> list[tuple]:
     """Return keyword pattern rows for a rule."""
     return [
-        (f"{rule_id}_kw_{i:03d}", rule_id, "keyword", kw, weight, 0)
+        (f"{rule_id}_kw_{language}_{i:03d}", rule_id, "keyword", kw, language, weight, 0)
         for i, kw in enumerate(keywords)
     ]
 
 
-def _rx(rule_id: str, regexes: list[str], weight: float = 1.0) -> list[tuple]:
+def _rx(
+    rule_id: str,
+    regexes: list[str],
+    weight: float = 1.0,
+    language: str = "de",
+) -> list[tuple]:
     """Return regex pattern rows for a rule."""
     return [
-        (f"{rule_id}_rx_{i:03d}", rule_id, "regex", rx, weight, 0)
+        (f"{rule_id}_rx_{language}_{i:03d}", rule_id, "regex", rx, language, weight, 0)
         for i, rx in enumerate(regexes)
     ]
 
@@ -399,6 +417,24 @@ def _build_patterns() -> list[tuple]:
         "complete feed",
         "complementary feed",
     ])
+    rows += _kw("art15_001", [
+        "complete pet food",
+        "complementary pet food",
+        "single feed",
+        "compound feed",
+        "mineral feed",
+        "milk replacer",
+    ], language="en")
+    rows += _kw("art15_001", [
+        "alimento completo",
+        "alimento complementare",
+        "aliment complet",
+        "aliment complémentaire",
+        "volledig diervoeder",
+        "aanvullend diervoeder",
+        "karma pełnoporcjowa",
+        "karma uzupełniająca",
+    ], language="other")
 
     # art15_002 – Verantwortlicher Unternehmer
     rows += _kw("art15_002", [
@@ -418,6 +454,26 @@ def _build_patterns() -> list[tuple]:
         "Hersteller:",
         "Anschrift:",
     ])
+    rows += _kw("art15_002", [
+        "responsible:",
+        "manufactured by",
+        "distributed by",
+        "address:",
+        "supplied by",
+        "Ltd.",
+    ], language="en")
+    rows += _kw("art15_002", [
+        "responsable:",
+        "distribué par",
+        "distribue par",
+        "fabriqué par",
+        "fabrique par",
+        "responsabile:",
+        "distribuito da",
+        "indirizzo:",
+        "verantwoordelijk:",
+        "adres:",
+    ], language="other")
     rows += _rx("art15_002", [
         r"\b\d{5}\s+[A-ZÄÖÜ][a-zäöüß]+\b",
     ])
@@ -427,6 +483,18 @@ def _build_patterns() -> list[tuple]:
         r"\b\d+[,.]?\d*\s*(kg|g|t|ml|l|Liter|Kilogramm|Gramm)\b",
         r"\b(Nettomasse|Nettogewicht|Nettomenge|Nettofüllmenge|Netto)[\s:]*\d+",
     ])
+    rows += _kw("art15_003", [
+        "net weight",
+        "net contents",
+        "net volume",
+    ], weight=0.85, language="en")
+    rows += _kw("art15_003", [
+        "poids net",
+        "contenu net",
+        "peso netto",
+        "nettogewicht",
+        "netto inhoud",
+    ], weight=0.85, language="other")
 
     # art15_004 – Losnummer
     rows += _kw("art15_004", [
@@ -441,6 +509,20 @@ def _build_patterns() -> list[tuple]:
         "Losnr",
         "Partienr",
     ])
+    rows += _kw("art15_004", [
+        "Reference number",
+        "batch number",
+        "lot number",
+        "Batch",
+        "Lot",
+    ], language="en")
+    rows += _kw("art15_004", [
+        "numero di riferimento",
+        "numero di lotto",
+        "numéro de lot",
+        "numero de lot",
+        "referentienummer",
+    ], language="other")
     rows += _rx("art15_004", [
         r"\b(LOT|L|Charge|Chargen-Nr\.?|Los|Partie)\s?[:\-]?\s?[A-Z0-9\-\/]+\b",
     ])
@@ -453,6 +535,19 @@ def _build_patterns() -> list[tuple]:
         "Feuchtigkeitsgehalt",
         "moisture",
     ])
+    rows += _kw("art15_005", [
+        "moisture",
+        "humidity",
+        "water content",
+    ], language="en")
+    rows += _kw("art15_005", [
+        "humidité",
+        "humidite",
+        "umidità",
+        "umidita",
+        "vocht",
+        "wilgotność",
+    ], language="other")
     rows += _rx("art15_005", [
         r"\b\d+[,.]?\d*\s*%\s*(Feuchte|Feuchtigkeit|Wasser)\b",
     ])
@@ -466,6 +561,19 @@ def _build_patterns() -> list[tuple]:
         "Sensorische Zusatzstoffe",
         "additives",
     ])
+    rows += _kw("art15_006", [
+        "additives",
+        "nutritional additives",
+        "technological additives",
+        "sensory additives",
+        "zootechnical additives",
+    ], language="en")
+    rows += _kw("art15_006", [
+        "additivi",
+        "additifs",
+        "toevoegingsmiddelen",
+        "dodatki",
+    ], language="other")
 
     # art16_001 – Bezeichnung Einzelfuttermittel (Anhang IV names)
     rows += _kw("art16_001", [
@@ -499,24 +607,66 @@ def _build_patterns() -> list[tuple]:
         "Verbrauch bis",
         "zu verbrauchen bis",
     ]
+    _mhd_kw_en = [
+        "best before",
+        "use before",
+        "expiry date",
+        "expiration date",
+    ]
+    _mhd_kw_other = [
+        "da consumarsi preferibilmente entro",
+        "à consommer de préférence avant",
+        "a consommer de preference avant",
+        "ten minste houdbaar tot",
+        "najlepiej spożyć przed",
+    ]
     _mhd_rx = [
         r"\b(MHD|BBD|mindestens haltbar bis)[:\s]*\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{2,4}\b",
     ]
     rows += _kw("art16_002", _mhd_kw)
+    rows += _kw("art16_002", _mhd_kw_en, language="en")
+    rows += _kw("art16_002", _mhd_kw_other, language="other")
     rows += _rx("art16_002", _mhd_rx)
 
     # art16_003 – Tierart (single_feed, optional)
+    _animal_de_rx = [
+        r"\bfür\s+(?:[A-Za-zÄÖÜäöüß\-]+\s+){0,4}(Hunde|Hund|Katzen|Katze|Rinder|Kälber|Kaelber|Schweine|Geflügel|Gefluegel|Pferde|Fische|Kaninchen|Schafe|Ziegen)\b",
+        r"\b(Hunde|Hund|Katzen|Katze|Rinder|Kälber|Kaelber|Schweine|Geflügel|Gefluegel|Pferde|Fische|Kaninchen|Schafe|Ziegen)\s+(?:adult|ausgewachsen|ausgewachsene|senior|junior)\b",
+    ]
+    _animal_en_rx = [
+        r"\bfor\s+(?:[A-Za-z\-]+\s+){0,4}(dogs?|cats?|cattle|calves|pigs?|poultry|horses?|fish|rabbits?)\b",
+    ]
+    _animal_other_rx = [
+        r"\bper\s+(?:[A-Za-zÀ-ÿ\-]+\s+){0,4}(cani|gatti)\b",
+        r"\bpour\s+(?:[A-Za-zÀ-ÿ\-]+\s+){0,4}(chiens|chats)\b",
+        r"\bvoor\s+(?:[A-Za-zÀ-ÿ\-]+\s+){0,4}(honden|katten)\b",
+        r"\bdla\s+(?:[A-Za-zÀ-ÿ\-]+\s+){0,4}(psów|psow|kotów|kotow)\b",
+    ]
     rows += _kw("art16_003", [
         "für Hunde", "für Katzen", "für Rinder", "für Kälber", "für Schweine",
         "für Geflügel", "für Pferde", "für Fische", "für Kaninchen",
         "für Schafe", "für Ziegen", "für Hund", "für Katze",
         "Tierart:", "Tierkategorie:",
     ])
+    rows += _rx("art16_003", _animal_de_rx)
+    rows += _kw("art16_003", [
+        "for dogs", "for cats", "for cattle", "for calves", "for pigs",
+        "for poultry", "for horses", "for fish", "for rabbits",
+        "animal species:", "feeding recommendation:",
+    ], language="en")
+    rows += _rx("art16_003", _animal_en_rx, language="en")
+    rows += _kw("art16_003", [
+        "per cani", "per gatti", "pour chiens", "pour chats",
+        "voor honden", "voor katten", "dla psów", "dla kotów",
+    ], language="other")
+    rows += _rx("art16_003", _animal_other_rx, language="other")
 
     # art17_002_* – Mindesthaltbarkeit (all compound feeds)
     for _, suffix in _COMPOUND_FEEDS:
         rule_id = f"art17_002_{suffix}"
         rows += _kw(rule_id, _mhd_kw)
+        rows += _kw(rule_id, _mhd_kw_en, language="en")
+        rows += _kw(rule_id, _mhd_kw_other, language="other")
         rows += _rx(rule_id, _mhd_rx)
 
     # art17_001_* – Tierart
@@ -540,6 +690,18 @@ def _build_patterns() -> list[tuple]:
     ]
     for _, suffix in _COMPOUND_FEEDS:
         rows += _kw(f"art17_001_{suffix}", _tierart_kw)
+        rows += _rx(f"art17_001_{suffix}", _animal_de_rx)
+        rows += _kw(f"art17_001_{suffix}", [
+            "for dogs", "for cats", "for cattle", "for calves", "for pigs",
+            "for poultry", "for horses", "for fish", "for rabbits",
+            "feeding recommendation:",
+        ], language="en")
+        rows += _rx(f"art17_001_{suffix}", _animal_en_rx, language="en")
+        rows += _kw(f"art17_001_{suffix}", [
+            "per cani", "per gatti", "pour chiens", "pour chats",
+            "voor honden", "voor katten", "dla psów", "dla kotów",
+        ], language="other")
+        rows += _rx(f"art17_001_{suffix}", _animal_other_rx, language="other")
 
     # art17_003_* – Zusammensetzung
     _zusammen_kw = [
@@ -550,6 +712,17 @@ def _build_patterns() -> list[tuple]:
     ]
     for _, suffix in _COMPOUND_FEEDS:
         rows += _kw(f"art17_003_{suffix}", _zusammen_kw)
+        rows += _kw(f"art17_003_{suffix}", [
+            "composition",
+            "ingredients",
+        ], language="en")
+        rows += _kw(f"art17_003_{suffix}", [
+            "composizione",
+            "composition",
+            "samenstelling",
+            "skład",
+            "sklad",
+        ], language="other")
 
     # art17_004_* – Analytische Bestandteile
     _analyt_kw = [
@@ -565,6 +738,24 @@ def _build_patterns() -> list[tuple]:
     ]
     for _, suffix in _COMPOUND_FEEDS:
         rows += _kw(f"art17_004_{suffix}", _analyt_kw)
+        rows += _kw(f"art17_004_{suffix}", [
+            "analytical constituents",
+            "crude protein",
+            "crude fat",
+            "crude fibre",
+            "crude ash",
+            "moisture",
+        ], language="en")
+        rows += _kw(f"art17_004_{suffix}", [
+            "componenti analitici",
+            "constituants analytiques",
+            "analytische bestanddelen",
+            "składniki analityczne",
+            "skladniki analityczne",
+            "proteina grezza",
+            "matieres grasses",
+            "teneur en matières grasses",
+        ], language="other")
 
     # art17_005_* – Hersteller
     _hersteller_kw = [
@@ -577,6 +768,18 @@ def _build_patterns() -> list[tuple]:
     ]
     for _, suffix in _COMPOUND_FEEDS:
         rows += _kw(f"art17_005_{suffix}", _hersteller_kw)
+        rows += _kw(f"art17_005_{suffix}", [
+            "manufactured by",
+            "produced by",
+            "distributed by",
+        ], language="en")
+        rows += _kw(f"art17_005_{suffix}", [
+            "fabriqué par",
+            "fabrique par",
+            "prodotto da",
+            "distribuito da",
+            "geproduceerd door",
+        ], language="other")
 
     return rows
 
@@ -687,9 +890,9 @@ def build(out_path: Path) -> int:
     con.executemany(
         """
         INSERT INTO labeling_rule_patterns
-            (id, rule_id, pattern_type, pattern_value, confidence_weight,
+            (id, rule_id, pattern_type, pattern_value, pattern_language, confidence_weight,
              is_negative_pattern)
-        VALUES (?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
         patterns,
     )

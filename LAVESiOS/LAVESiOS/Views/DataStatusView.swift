@@ -43,6 +43,24 @@ struct DataStatusView: View {
                     }
                 }
 
+                if !store.currentSHA256.isEmpty {
+                    Section("Integrität") {
+                        LabeledContent("SHA-256") {
+                            Text(String(store.currentSHA256.prefix(16)) + "…")
+                                .font(.caption)
+                                .fontDesign(.monospaced)
+                                .foregroundStyle(.secondary)
+                        }
+                        .contextMenu {
+                            Button {
+                                UIPasteboard.general.string = store.currentSHA256
+                            } label: {
+                                Label("SHA-256 kopieren", systemImage: "doc.on.doc")
+                            }
+                        }
+                    }
+                }
+
                 Section {
                     Button {
                         Task {

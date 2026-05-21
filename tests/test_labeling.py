@@ -299,6 +299,36 @@ class TestOCRResilience:
         assert keyword_match("Alleinfuttermittel", text)
         assert keyword_match("best before", text)
 
+    def test_english_fallback_keywords(self):
+        text = "Complementary pet food for adult cats. Composition: meat. Analytical constituents: crude protein 35.5 %."
+        assert keyword_match("complementary pet food", text)
+        assert keyword_match("composition", text)
+        assert keyword_match("analytical constituents", text)
+
+    def test_other_language_fallback_keywords(self):
+        text = "Alimento complementare per gatti adulti. Composizione: carni. Componenti analitici: proteina grezza 35,5 %."
+        assert keyword_match("alimento complementare", text)
+        assert keyword_match("composizione", text)
+        assert keyword_match("componenti analitici", text)
+
+    def test_animal_species_with_words_between(self):
+        con = load_db()
+        if con is None:
+            pytest.skip("laves_labeling.sqlite not found")
+        patterns = [
+            row[0] for row in con.execute(
+                """
+                SELECT pattern_value FROM labeling_rule_patterns
+                WHERE rule_id='art17_001_complementary'
+                  AND pattern_type='regex'
+                  AND pattern_language='de'
+                """
+            )
+        ]
+        con.close()
+        text = "Ergänzungsfuttermittel für ausgewachsene Katzen Zusammensetzung"
+        assert any(regex_match(pattern, text) for pattern in patterns)
+
     def test_short_ocr_not_checkable(self):
         text = "LAVES GmbH"
         # Less than 40 characters → should be flagged as not checkable
@@ -349,3 +379,17 @@ class TestDatabaseIntegrity:
         ).fetchone()
         assert sha is not None
         assert len(sha[0]) == 64, "SHA-256 should be 64 hex characters"
+
+    def test_patterns_have_language_column(self):
+        columns = {
+            row[1] for row in self.con.execute("PRAGMA table_info(labeling_rule_patterns)")
+        }
+        assert "pattern_language" in columns
+
+    def test_multilingual_patterns_present(self):
+        counts = dict(self.con.execute(
+            "SELECT pattern_language, COUNT(*) FROM labeling_rule_patterns GROUP BY pattern_language"
+        ).fetchall())
+        assert counts.get("de", 0) > 0
+        assert counts.get("en", 0) > 0
+        assert counts.get("other", 0) > 0

@@ -1,17 +1,27 @@
 import Foundation
 
 enum EvaluationState {
-    case compliant
-    case nonCompliant
-    case warning
+    case unauffaellig
+    case auffaellig
+    case nichtBewertbar
 
     var title: String {
         switch self {
-        case .compliant: return "KONFORM"
-        case .nonCompliant: return "NICHT KONFORM"
-        case .warning: return "PRÜFUNG NICHT MÖGLICH"
+        case .unauffaellig: return "UNAUFFÄLLIG"
+        case .auffaellig: return "AUFFÄLLIG"
+        case .nichtBewertbar: return "NICHT BEWERTBAR"
         }
     }
+
+    var icon: String {
+        switch self {
+        case .unauffaellig: return "checkmark.circle.fill"
+        case .auffaellig: return "exclamationmark.triangle.fill"
+        case .nichtBewertbar: return "questionmark.circle.fill"
+        }
+    }
+
+    static let schnellcheckDisclaimer = "Mobiler Schnellcheck – keine rechtsverbindliche Aussage. Finale Bewertung erforderlich."
 }
 
 struct EvaluationResult: Identifiable {
@@ -135,7 +145,7 @@ struct EvaluationService {
 
         guard hasMin || hasMax else {
             return EvaluationResult(
-                state: .warning,
+                state: .nichtBewertbar,
                 lines: metadataLines(
                     for: additive,
                     prefix: ["Keine Grenzwerte im Datensatz hinterlegt."]
@@ -170,7 +180,7 @@ struct EvaluationService {
         lines.append("Hinterlegte Grenzwerte: " + limitParts.joined(separator: " | "))
 
         return EvaluationResult(
-            state: ok ? .compliant : .nonCompliant,
+            state: ok ? .unauffaellig : .auffaellig,
             lines: metadataLines(for: additive, prefix: lines)
         )
     }

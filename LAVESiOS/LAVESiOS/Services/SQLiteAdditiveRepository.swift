@@ -10,9 +10,11 @@ struct SQLiteAdditiveRepository {
         }
         defer { sqlite3_close(database) }
 
+        // Use null placeholder when the einheit column doesn't exist yet (older DB schema)
+        let einheitExpr = hasColumn("einheit", in: "additives", database: database) ? "einheit" : "null"
         let query = """
         SELECT kennnummer, name, tierarten, hoechstalter_tage, min_mg_kg, max_mg_kg,
-               einheit, rechtsgrundlage, source_file, source_page, tierart_kategorie
+               \(einheitExpr), rechtsgrundlage, source_file, source_page, tierart_kategorie
         FROM additives
         ORDER BY kennnummer, name, tierarten
         """
@@ -65,6 +67,19 @@ struct SQLiteAdditiveRepository {
             return nil
         }
         return Int(sqlite3_column_int(statement, index))
+    }
+
+    private func hasColumn(_ name: String, in table: String, database: OpaquePointer?) -> Bool {
+        let pragmaQuery = "PRAGMA table_info(\(table))"
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(database, pragmaQuery, -1, &stmt, nil) == SQLITE_OK else { return false }
+        defer { sqlite3_finalize(stmt) }
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            if let text = sqlite3_column_text(stmt, 1), String(cString: text) == name {
+                return true
+            }
+        }
+        return false
     }
 
     private func errorMessage(_ database: OpaquePointer?) -> String {
