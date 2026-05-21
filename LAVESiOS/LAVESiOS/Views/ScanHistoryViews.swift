@@ -9,6 +9,18 @@ struct ScanHistoryPickerView<Destination: View>: View {
     @State private var isClearAllPresented = false
     @State private var isClearImagesPresented = false
 
+    private var removableImageCount: Int {
+        service.entries.filter { !$0.isPinned && $0.thumbnailFileName != nil }.count
+    }
+
+    private var unpinnedCount: Int {
+        service.entries.filter { !$0.isPinned }.count
+    }
+
+    private var pinnedCount: Int {
+        service.entries.filter(\.isPinned).count
+    }
+
     var body: some View {
         List {
             Section("Status") {
@@ -29,6 +41,20 @@ struct ScanHistoryPickerView<Destination: View>: View {
                 } else {
                     LabeledContent("Letzte Bereinigung", value: "Noch nicht ausgeführt")
                 }
+                if let loadError = service.loadError {
+                    Label(loadError, systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
+                if service.pinnedImagesBytesExceedStorageLimit {
+                    Label {
+                        Text("Gepinnte Bilder überschreiten das Speicherlimit. Nicht-gepinnte Bilder werden bevorzugt entfernt.")
+                    } icon: {
+                        Image(systemName: "pin.circle")
+                            .foregroundStyle(.orange)
+                    }
+                    .font(.caption)
+                }
             }
 
             Section("Bereinigung") {
@@ -43,14 +69,14 @@ struct ScanHistoryPickerView<Destination: View>: View {
                 } label: {
                     Label("Nur Bilder löschen", systemImage: "photo.badge.minus")
                 }
+                .disabled(removableImageCount == 0)
 
                 Button(role: .destructive) {
                     isClearAllPresented = true
                 } label: {
                     Label("Alles löschen", systemImage: "trash")
                 }
-
-                Toggle("OCR-Texte bei Bildlöschung behalten", isOn: $service.settings.keepOCRTextWhenDeletingImages)
+                .disabled(unpinnedCount == 0)
             }
 
             if service.entries.isEmpty {
@@ -116,21 +142,25 @@ struct ScanHistoryPickerView<Destination: View>: View {
                 ScanHistorySettingsView(service: service)
             }
         }
-        .confirmationDialog("Nur gespeicherte Bilder löschen?", isPresented: $isClearImagesPresented, titleVisibility: .visible) {
-            Button("Bilder löschen") {
-                service.deleteAllImages(keepOCRText: service.settings.keepOCRTextWhenDeletingImages)
+        .confirmationDialog("Nur Bilder löschen?", isPresented: $isClearImagesPresented, titleVisibility: .visible) {
+            Button("Bilder löschen", role: .destructive) {
+                service.deleteAllImages(keepOCRText: true)
             }
             Button("Abbrechen", role: .cancel) {}
         } message: {
-            Text("OCR-Texte bleiben erhalten, wenn die Option aktiviert ist. Gepinnte Einträge bleiben geschützt.")
+            Text("\(removableImageCount) \(removableImageCount == 1 ? "Bild wird" : "Bilder werden") entfernt. OCR-Texte bleiben vollständig erhalten. Gepinnte Einträge werden nicht berührt.")
         }
-        .confirmationDialog("Historie löschen?", isPresented: $isClearAllPresented, titleVisibility: .visible) {
+        .confirmationDialog("Scan-Verlauf löschen?", isPresented: $isClearAllPresented, titleVisibility: .visible) {
             Button("Alle nicht gepinnten Scans löschen", role: .destructive) {
                 service.deleteAll()
             }
             Button("Abbrechen", role: .cancel) {}
         } message: {
-            Text("Gepinnte Scans werden nicht automatisch gelöscht.")
+            if pinnedCount > 0 {
+                Text("\(unpinnedCount) \(unpinnedCount == 1 ? "Eintrag wird" : "Einträge werden") dauerhaft gelöscht. \(pinnedCount) gepinnte \(pinnedCount == 1 ? "Eintrag bleibt" : "Einträge bleiben") erhalten.")
+            } else {
+                Text("\(unpinnedCount) \(unpinnedCount == 1 ? "Eintrag wird" : "Einträge werden") dauerhaft gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.")
+            }
         }
     }
 }
@@ -179,34 +209,89 @@ private struct ScanEntryRow: View {
 private struct ScanHistorySettingsView: View {
     @ObservedObject var service: ScanHistoryService
     @Environment(\.dismiss) private var dismiss
+    @State private var pending: ScanHistorySettings
+    @State private var impact: ScanHistoryCleanupPolicy.Result?
+    @State private var isDestructiveConfirmPresented = false
+
+    init(service: ScanHistoryService) {
+        self.service = service
+        _pending = State(initialValue: service.settings)
+    }
+
+    private var hasChanges: Bool { pending != service.settings }
+
+    private var hasDestructiveImpact: Bool {
+        guard let impact else { return false }
+        return impact.removedEntries > 0 || impact.removedImages > 0
+    }
 
     var body: some View {
         Form {
             Section("Speicherung") {
-                Toggle("Historie aktiviert", isOn: $service.settings.isHistoryEnabled)
-                Toggle("Bilder automatisch komprimieren", isOn: $service.settings.compressImages)
-                Toggle("Nur Thumbnails speichern", isOn: $service.settings.storeThumbnailsOnly)
-                Toggle("OCR-Text behalten bei Bildlöschung", isOn: $service.settings.keepOCRTextWhenDeletingImages)
+                Toggle("Historie aktiviert", isOn: $pending.isHistoryEnabled)
+                Toggle("Bilder automatisch komprimieren", isOn: $pending.compressImages)
+                Toggle("Nur Thumbnails speichern", isOn: $pending.storeThumbnailsOnly)
+                Toggle("OCR-Text behalten bei Bildlöschung", isOn: $pending.keepOCRTextWhenDeletingImages)
             }
 
             Section("Limits") {
-                Picker("Maximale Einträge", selection: $service.settings.maxEntries) {
+                Picker("Maximale Einträge", selection: $pending.maxEntries) {
                     ForEach(ScanHistoryEntryLimit.allCases) { limit in
                         Text(limit.title).tag(limit)
                     }
                 }
 
-                Picker("Maximales Alter", selection: $service.settings.maxAge) {
+                Picker("Maximales Alter", selection: $pending.maxAge) {
                     ForEach(ScanHistoryAgeLimit.allCases) { limit in
                         Text(limit.title).tag(limit)
                     }
                 }
 
-                Picker("Speicherlimit", selection: $service.settings.storageLimit) {
+                Picker("Speicherlimit", selection: $pending.storageLimit) {
                     ForEach(ScanHistoryStorageLimit.allCases) { limit in
                         Text(limit.title).tag(limit)
                     }
                 }
+            }
+
+            if let impact, hasDestructiveImpact {
+                Section {
+                    Label {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Diese Änderung würde sofort wirksam:")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            if impact.removedEntries > 0 {
+                                Text("• \(impact.removedEntries) \(impact.removedEntries == 1 ? "Eintrag" : "Einträge") werden gelöscht")
+                                    .font(.caption)
+                            }
+                            if impact.removedImages > 0 {
+                                Text("• \(impact.removedImages) \(impact.removedImages == 1 ? "Bild wird" : "Bilder werden") entfernt")
+                                    .font(.caption)
+                            }
+                        }
+                    } icon: {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                    }
+                }
+            }
+
+            Section {
+                Button("Einstellungen übernehmen") {
+                    if hasDestructiveImpact {
+                        isDestructiveConfirmPresented = true
+                    } else {
+                        service.settings = pending
+                        dismiss()
+                    }
+                }
+                .disabled(!hasChanges)
+
+                Button("Zurücksetzen", role: .cancel) {
+                    pending = service.settings
+                }
+                .disabled(!hasChanges)
             }
 
             Section("Datenschutz") {
@@ -219,9 +304,31 @@ private struct ScanHistorySettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button("Fertig") {
-                    dismiss()
-                }
+                Button("Fertig") { dismiss() }
+            }
+        }
+        .onChange(of: pending) { _, new in
+            impact = new != service.settings ? service.previewCleanup(with: new) : nil
+        }
+        .confirmationDialog(
+            "Einstellungen anwenden?",
+            isPresented: $isDestructiveConfirmPresented,
+            titleVisibility: .visible
+        ) {
+            Button("Übernehmen und löschen", role: .destructive) {
+                service.settings = pending
+                dismiss()
+            }
+            Button("Abbrechen", role: .cancel) {}
+        } message: {
+            if let impact {
+                let entries = impact.removedEntries > 0
+                    ? "\(impact.removedEntries) \(impact.removedEntries == 1 ? "Eintrag" : "Einträge") und "
+                    : ""
+                let images = impact.removedImages > 0
+                    ? "\(impact.removedImages) \(impact.removedImages == 1 ? "Bild" : "Bilder")"
+                    : ""
+                Text("Beim Übernehmen werden \(entries)\(images) unwiderruflich gelöscht. Gepinnte Einträge bleiben erhalten.")
             }
         }
     }

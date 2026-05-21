@@ -13,6 +13,7 @@ final class ScanHistoryService: ObservableObject {
     }
     @Published private(set) var stats = ScanHistoryStats()
     @Published private(set) var lastCleanup: ScanCleanupReport?
+    @Published private(set) var loadError: String?
 
     private enum CleanupReason {
         case addedEntry
@@ -92,6 +93,35 @@ final class ScanHistoryService: ObservableObject {
         save()
     }
 
+    func previewCleanup(with newSettings: ScanHistorySettings) -> ScanHistoryCleanupPolicy.Result {
+        var result = ScanHistoryCleanupPolicy.apply(entries: entries, settings: newSettings)
+        if let byteLimit = newSettings.storageLimit.bytes {
+            let imageSizes = Dictionary(
+                uniqueKeysWithValues: result.entries.compactMap { entry -> (String, Int64)? in
+                    guard let fileName = entry.thumbnailFileName else { return nil }
+                    return (fileName, imageStore.imageSize(fileName: fileName))
+                }
+            )
+            let storageResult = ScanHistoryCleanupPolicy.removeImagesToFitStorage(
+                entries: result.entries,
+                imageSizesByFileName: imageSizes,
+                byteLimit: byteLimit,
+                keepOCRText: newSettings.keepOCRTextWhenDeletingImages
+            )
+            result.removedImages += storageResult.removedImages
+        }
+        return result
+    }
+
+    var pinnedImagesBytesExceedStorageLimit: Bool {
+        guard let byteLimit = settings.storageLimit.bytes else { return false }
+        let pinnedBytes = entries
+            .filter(\.isPinned)
+            .compactMap(\.thumbnailFileName)
+            .reduce(Int64(0)) { $0 + imageStore.imageSize(fileName: $1) }
+        return pinnedBytes > byteLimit
+    }
+
     func deleteAllImages(keepOCRText: Bool = true) {
         for entry in entries where !entry.isPinned {
             imageStore.remove(fileName: entry.thumbnailFileName)
@@ -123,9 +153,16 @@ final class ScanHistoryService: ObservableObject {
     }
 
     private func load() {
-        guard let data = try? Data(contentsOf: historyURL),
-              let decoded = try? JSONDecoder().decode([ScanEntry].self, from: data) else { return }
-        entries = decoded
+        guard FileManager.default.fileExists(atPath: historyURL.path) else { return }
+        do {
+            let data = try Data(contentsOf: historyURL)
+            entries = try JSONDecoder().decode([ScanEntry].self, from: data)
+        } catch {
+            let backupURL = historyURL.appendingPathExtension("corrupt.\(Int(Date().timeIntervalSince1970))")
+            try? FileManager.default.moveItem(at: historyURL, to: backupURL)
+            loadError = "Scan-Verlauf konnte nicht gelesen werden und wurde gesichert."
+            entries = []
+        }
     }
 
     private func save() {
@@ -173,11 +210,15 @@ final class ScanHistoryService: ObservableObject {
             entries = storageResult.entries
             policyResult.removedImages += storageResult.removedImages
 
-            while imageStore.totalImageBytes() > byteLimit,
-                  let candidate = entries.last(where: { !$0.isPinned && $0.thumbnailFileName != nil }) {
-                imageStore.remove(fileName: candidate.thumbnailFileName)
+            var currentBytes = imageStore.totalImageBytes()
+            while currentBytes > byteLimit,
+                  let candidate = entries.last(where: { !$0.isPinned && $0.thumbnailFileName != nil }),
+                  let fileName = candidate.thumbnailFileName {
+                let size = imageStore.imageSize(fileName: fileName)
+                imageStore.remove(fileName: fileName)
                 entries.removeAll { $0.id == candidate.id }
                 policyResult.removedEntries += 1
+                currentBytes = max(0, currentBytes - size)
             }
         }
 

@@ -117,7 +117,7 @@ struct SQLiteLabelingRuleRepository: LabelingRuleRepository {
             celex: meta["labeling_source_celex"] ?? "–",
             versionDate: meta["labeling_source_version_date"] ?? "–",
             createdAt: meta["labeling_created_at"] ?? "–",
-            ruleCount: ruleCount,
+            totalRuleCount: ruleCount,
             sha256: meta["labeling_sha256"] ?? "–"
         )
     }
