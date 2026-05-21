@@ -2,6 +2,8 @@ import SwiftUI
 
 struct SingleCheckView: View {
     @ObservedObject var store: AdditiveStore
+    @ObservedObject var scanHistory: ScanHistoryService
+    @Binding var selectedScanEntry: ScanEntry?
 
     @State private var animalCategory = "Alle Kategorien"
     @State private var selectedSpecies = "Alle Tierarten"
@@ -17,6 +19,44 @@ struct SingleCheckView: View {
                     Section {
                         Text(loadError)
                             .foregroundStyle(.red)
+                    }
+                }
+
+                Section("Scan-Historie") {
+                    if let selectedScanEntry {
+                        NavigationLink {
+                            AdditiveScanResultView(entry: selectedScanEntry, store: store, scanHistory: scanHistory)
+                        } label: {
+                            HStack(spacing: 12) {
+                                if let image = scanHistory.thumbnail(for: selectedScanEntry) {
+                                    Image(uiImage: image)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 48, height: 48)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                } else {
+                                    Image(systemName: "photo")
+                                        .frame(width: 48, height: 48)
+                                        .foregroundStyle(.secondary)
+                                }
+
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text("Aktueller Scan")
+                                        .font(.subheadline)
+                                    Text(selectedScanEntry.timestamp.formatted(date: .abbreviated, time: .shortened))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+
+                    NavigationLink {
+                        ScanHistoryPickerView(service: scanHistory, title: "Zusatzstoff-Scans") { entry in
+                            AdditiveScanResultView(entry: entry, store: store, scanHistory: scanHistory)
+                        }
+                    } label: {
+                        Label("Gespeicherte Scans", systemImage: "clock.arrow.circlepath")
                     }
                 }
 
@@ -72,7 +112,7 @@ struct SingleCheckView: View {
                             eNumber = derived
                         }
                     }
-                    TextField("Laborwert mg/kg", text: $value)
+                    TextField("Laborwert (\(selectedUnit))", text: $value)
                         .keyboardType(.decimalPad)
                 }
 
@@ -86,8 +126,10 @@ struct SingleCheckView: View {
                 if let result {
                     ResultSection(result: result)
                 }
+
+                DataStatusBanner(status: store.dataStatusBrief)
             }
-            .navigationTitle("Einzelprüfung")
+            .navigationTitle("Zusatzstoffe")
         }
     }
 
@@ -107,6 +149,14 @@ struct SingleCheckView: View {
             animalCategory: animalCategory, selectedSpecies: selectedSpecies
         )
         return filtered.isEmpty ? store.substances : filtered
+    }
+
+    private var selectedUnit: String {
+        let m = EvaluationService.candidates(
+            in: store.additives, eNumber: eNumber, substance: substance,
+            animalCategory: animalCategory, selectedSpecies: selectedSpecies
+        )
+        return m.first?.unit ?? "mg/kg"
     }
 
     private func resetAdditiveSelection() {
@@ -129,13 +179,13 @@ struct SingleCheckView: View {
         )
 
         guard let additive = matches.first else {
-            result = EvaluationResult(state: .warning, lines: ["Kein passender Datensatz gefunden."])
+            result = EvaluationResult(state: .nichtBewertbar, lines: ["Kein passender Datensatz gefunden."])
             return
         }
 
         if matches.count > 1 {
             result = EvaluationResult(
-                state: .warning,
+                state: .nichtBewertbar,
                 lines: [
                     "Mehrere passende Datensätze gefunden.",
                     "Bitte Zulassungsnummer oder Stoffname genauer eingrenzen.",
@@ -155,13 +205,17 @@ struct ResultSection: View {
     var body: some View {
         Section {
             VStack(alignment: .leading, spacing: 8) {
-                Text(result.state.title)
+                Label(result.state.title, systemImage: result.state.icon)
                     .font(.headline)
                     .foregroundStyle(color)
                 ForEach(result.lines, id: \.self) { line in
                     Text(line)
                         .font(.body)
                 }
+                Divider()
+                Text(EvaluationState.schnellcheckDisclaimer)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
             .padding(.vertical, 4)
         }
@@ -169,9 +223,25 @@ struct ResultSection: View {
 
     private var color: Color {
         switch result.state {
-        case .compliant: return .green
-        case .nonCompliant: return .red
-        case .warning: return .orange
+        case .unauffaellig: return .green
+        case .auffaellig: return .red
+        case .nichtBewertbar: return .orange
+        }
+    }
+}
+
+struct DataStatusBanner: View {
+    let status: String
+
+    var body: some View {
+        Section {
+            HStack(spacing: 6) {
+                Image(systemName: "cylinder.split.1x2")
+                    .foregroundStyle(.secondary)
+                Text(status)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 }

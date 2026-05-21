@@ -179,6 +179,18 @@ final class AdditiveStore: ObservableObject {
         return value
     }
 
+    var dataStatusBrief: String {
+        guard !additives.isEmpty else { return "Keine Daten geladen" }
+        if let generatedAt = defaults.string(forKey: manifestDateKey), !generatedAt.isEmpty {
+            return "Stand \(formattedDataDate(generatedAt)) · \(additives.count) Einträge"
+        }
+        return "\(additives.count) Einträge geladen"
+    }
+
+    var currentSHA256: String {
+        defaults.string(forKey: manifestSHAKey) ?? ""
+    }
+
     private let isoDateFormatterWithFractionalSeconds: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]

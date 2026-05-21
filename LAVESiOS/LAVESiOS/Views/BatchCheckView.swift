@@ -93,6 +93,8 @@ struct BatchCheckView: View {
                 if let result {
                     ResultSection(result: result)
                 }
+
+                DataStatusBanner(status: store.dataStatusBrief)
             }
             .navigationTitle("Zusatzstoffprüfung")
         }
@@ -145,7 +147,7 @@ struct BatchCheckView: View {
 
         guard let additive = matches.first, matches.count == 1 else {
             result = EvaluationResult(
-                state: .warning,
+                state: .nichtBewertbar,
                 lines: [
                     matches.isEmpty ? "Kein passender Datensatz gefunden." : "Mehrere passende Datensätze gefunden.",
                     "Masse: \(mass.formatted(.number.precision(.fractionLength(0...3)))) kg",

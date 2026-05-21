@@ -22,6 +22,14 @@
 		9A0000010000000000000041 /* Services/IngredientScanService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000043 /* Services/IngredientScanService.swift */; };
 		9A0000010000000000000042 /* Views/IngredientScanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000044 /* Views/IngredientScanView.swift */; };
 		9A0000010000000000000045 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000046 /* Assets.xcassets */; };
+		9A0000010000000000000047 /* Models/LabelingRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A000001000000000000004F /* Models/LabelingRule.swift */; };
+		9A0000010000000000000048 /* Services/SQLiteLabelingRuleRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000050 /* Services/SQLiteLabelingRuleRepository.swift */; };
+		9A0000010000000000000049 /* Services/LabelingFeedTypeDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000051 /* Services/LabelingFeedTypeDetector.swift */; };
+		9A000001000000000000004A /* Services/LabelingCheckService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000052 /* Services/LabelingCheckService.swift */; };
+		9A000001000000000000004B /* Services/LabelingRuleStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000053 /* Services/LabelingRuleStore.swift */; };
+		9A000001000000000000004C /* Views/LabelingCheckView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000054 /* Views/LabelingCheckView.swift */; };
+		9A000001000000000000004D /* Views/LabelingResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000055 /* Views/LabelingResultView.swift */; };
+		9A000001000000000000004E /* Resources/laves_labeling.sqlite in Resources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000056 /* Resources/laves_labeling.sqlite */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -41,6 +49,14 @@
 		9A0000010000000000000043 /* Services/IngredientScanService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/IngredientScanService.swift; sourceTree = "<group>"; };
 		9A0000010000000000000044 /* Views/IngredientScanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/IngredientScanView.swift; sourceTree = "<group>"; };
 		9A0000010000000000000046 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		9A000001000000000000004F /* Models/LabelingRule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models/LabelingRule.swift; sourceTree = "<group>"; };
+		9A0000010000000000000050 /* Services/SQLiteLabelingRuleRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/SQLiteLabelingRuleRepository.swift; sourceTree = "<group>"; };
+		9A0000010000000000000051 /* Services/LabelingFeedTypeDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/LabelingFeedTypeDetector.swift; sourceTree = "<group>"; };
+		9A0000010000000000000052 /* Services/LabelingCheckService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/LabelingCheckService.swift; sourceTree = "<group>"; };
+		9A0000010000000000000053 /* Services/LabelingRuleStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/LabelingRuleStore.swift; sourceTree = "<group>"; };
+		9A0000010000000000000054 /* Views/LabelingCheckView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/LabelingCheckView.swift; sourceTree = "<group>"; };
+		9A0000010000000000000055 /* Views/LabelingResultView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/LabelingResultView.swift; sourceTree = "<group>"; };
+		9A0000010000000000000056 /* Resources/laves_labeling.sqlite */ = {isa = PBXFileReference; lastKnownFileType = file; path = Resources/laves_labeling.sqlite; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -79,7 +95,15 @@
 				9A0000010000000000000044 /* Views/IngredientScanView.swift */,
 				9A0000010000000000000040 /* Views/SearchableSelectionField.swift */,
 				9A0000010000000000000018 /* Resources/zusatzstoffe.json */,
+				9A0000010000000000000056 /* Resources/laves_labeling.sqlite */,
 				9A0000010000000000000046 /* Assets.xcassets */,
+				9A000001000000000000004F /* Models/LabelingRule.swift */,
+				9A0000010000000000000050 /* Services/SQLiteLabelingRuleRepository.swift */,
+				9A0000010000000000000051 /* Services/LabelingFeedTypeDetector.swift */,
+				9A0000010000000000000052 /* Services/LabelingCheckService.swift */,
+				9A0000010000000000000053 /* Services/LabelingRuleStore.swift */,
+				9A0000010000000000000054 /* Views/LabelingCheckView.swift */,
+				9A0000010000000000000055 /* Views/LabelingResultView.swift */,
 			);
 			path = LAVESiOS;
 			sourceTree = "<group>";
@@ -153,6 +177,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				9A0000010000000000000008 /* Resources/zusatzstoffe.json in Resources */,
+				9A000001000000000000004E /* Resources/laves_labeling.sqlite in Resources */,
 				9A0000010000000000000045 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -177,6 +202,13 @@
 				9A0000010000000000000041 /* Services/IngredientScanService.swift in Sources */,
 				9A0000010000000000000042 /* Views/IngredientScanView.swift in Sources */,
 				9A0000010000000000000039 /* Views/SearchableSelectionField.swift in Sources */,
+				9A0000010000000000000047 /* Models/LabelingRule.swift in Sources */,
+				9A0000010000000000000048 /* Services/SQLiteLabelingRuleRepository.swift in Sources */,
+				9A0000010000000000000049 /* Services/LabelingFeedTypeDetector.swift in Sources */,
+				9A000001000000000000004A /* Services/LabelingCheckService.swift in Sources */,
+				9A000001000000000000004B /* Services/LabelingRuleStore.swift in Sources */,
+				9A000001000000000000004C /* Views/LabelingCheckView.swift in Sources */,
+				9A000001000000000000004D /* Views/LabelingResultView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
