@@ -32,8 +32,11 @@ jobs:
       - name: Build SQLite database
         run: python scripts/build_sqlite_db.py --json Data/zusatzstoffe.json --out dist/laves.sqlite
 
+      - name: Build labeling rules database
+        run: python scripts/build_labeling_db.py --out dist/laves_labeling.sqlite
+
       - name: Build data manifest
-        run: python scripts/build_data_manifest.py --json Data/zusatzstoffe.json --sqlite dist/laves.sqlite --out dist/manifest.json
+        run: python scripts/build_data_manifest.py --json Data/zusatzstoffe.json --sqlite dist/laves.sqlite --labeling-sqlite dist/laves_labeling.sqlite --out dist/manifest.json
 
       - name: Upload data artifacts
         uses: actions/upload-artifact@v6
@@ -42,6 +45,7 @@ jobs:
           path: |
             Data/zusatzstoffe.json
             dist/laves.sqlite
+            dist/laves_labeling.sqlite
             dist/manifest.json
           retention-days: 30
 
@@ -52,18 +56,19 @@ jobs:
           token: ${{ secrets.LAVES_DATA_REPO_TOKEN }}
           path: public-data
 
-      - name: Publish SQLite database
+      - name: Publish SQLite databases
         run: |
           cp dist/laves.sqlite public-data/laves.sqlite
+          cp dist/laves_labeling.sqlite public-data/laves_labeling.sqlite
           cp Data/zusatzstoffe.json public-data/zusatzstoffe.json
           cp dist/manifest.json public-data/manifest.json
           cd public-data
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add laves.sqlite zusatzstoffe.json manifest.json
+          git add laves.sqlite laves_labeling.sqlite zusatzstoffe.json manifest.json
           if git diff --cached --quiet; then
             echo "No data changes to publish."
           else
-            git commit -m "Update generated LAVES data"
+            git commit -m "Update generated LAVES data (incl. labeling rules)"
             git push
           fi
