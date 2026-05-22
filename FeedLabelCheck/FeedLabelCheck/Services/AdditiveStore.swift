@@ -132,6 +132,7 @@ final class AdditiveStore: ObservableObject {
             updateProgress = 1
             updateDetail = "Datenbank wird gespeichert"
             try prepareDataDirectory()
+            _ = try sqliteRepository.loadAdditives(from: downloadedURL)
             if FileManager.default.fileExists(atPath: localDatabaseURL.path) {
                 try FileManager.default.removeItem(at: localDatabaseURL)
             }

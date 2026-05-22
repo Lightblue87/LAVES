@@ -3,11 +3,7 @@ import SQLite3
 
 struct SQLiteAdditiveRepository {
     func loadAdditives(from databaseURL: URL) throws -> [Additive] {
-        var database: OpaquePointer?
-        guard sqlite3_open_v2(databaseURL.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
-            defer { sqlite3_close(database) }
-            throw SQLiteRepositoryError.openFailed(message: errorMessage(database))
-        }
+        let database = try openReadonly(databaseURL)
         defer { sqlite3_close(database) }
 
         // Use null placeholder when the einheit column doesn't exist yet (older DB schema)
@@ -80,6 +76,27 @@ struct SQLiteAdditiveRepository {
             }
         }
         return false
+    }
+
+    private func openReadonly(_ url: URL) throws -> OpaquePointer? {
+        var database: OpaquePointer?
+        let flags = SQLITE_OPEN_READONLY | SQLITE_OPEN_URI
+        let immutableURI = url.absoluteString + "?immutable=1"
+
+        if sqlite3_open_v2(immutableURI, &database, flags, nil) == SQLITE_OK {
+            return database
+        }
+
+        let immutableError = errorMessage(database)
+        sqlite3_close(database)
+        database = nil
+
+        guard sqlite3_open_v2(url.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+            let fallbackError = errorMessage(database)
+            sqlite3_close(database)
+            throw SQLiteRepositoryError.openFailed(message: "\(fallbackError) (\(immutableError))")
+        }
+        return database
     }
 
     private func errorMessage(_ database: OpaquePointer?) -> String {
