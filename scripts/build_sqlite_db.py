@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the LAVES SQLite database from Data/zusatzstoffe.json."""
+"""Build the FeedLabelCheck SQLite database from Data/zusatzstoffe.json."""
 
 from __future__ import annotations
 
@@ -110,9 +110,9 @@ def build_sqlite(json_path: Path, sqlite_path: Path) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Build LAVES SQLite database from JSON.")
+    parser = argparse.ArgumentParser(description="Build FeedLabelCheck SQLite database from JSON.")
     parser.add_argument("--json", type=Path, default=Path("Data/zusatzstoffe.json"))
-    parser.add_argument("--out", type=Path, default=Path("dist/laves.sqlite"))
+    parser.add_argument("--out", type=Path, default=Path("dist/feedlabelcheck.sqlite"))
     args = parser.parse_args()
 
     build_sqlite(args.json, args.out)
