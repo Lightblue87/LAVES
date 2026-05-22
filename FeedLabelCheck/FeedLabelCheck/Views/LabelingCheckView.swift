@@ -25,17 +25,25 @@ struct LabelingCheckView: View {
     var body: some View {
         NavigationStack {
             Form {
-                databaseSection
-                controlBasisSection
                 loadedScanSection
+                controlBasisSection
                 feedTypeSection
                 actionSection
                 controlComparisonSection
+                labelingStatusBanner
             }
             .navigationTitle("Kennzeichnung")
             .toolbar {
-                if let dbInfo = labelingStore.dbInfo {
-                    ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    if labelingStore.updateAvailable, !labelingStore.isUpdating {
+                        Button {
+                            Task { await labelingStore.updateFromRemote() }
+                        } label: {
+                            Image(systemName: "arrow.down.circle.fill")
+                                .foregroundStyle(.blue)
+                        }
+                    }
+                    if let dbInfo = labelingStore.dbInfo {
                         Text("v\(dbInfo.version)")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
@@ -68,95 +76,93 @@ struct LabelingCheckView: View {
 
     // MARK: - Sections
 
-    private var databaseSection: some View {
-        Section("Regeldatenbank") {
-            if let dbInfo = labelingStore.dbInfo {
-                LabeledContent("Quelle", value: dbInfo.regulation)
-                LabeledContent("Regelversion", value: dbInfo.version)
-                LabeledContent("Datenstand", value: formattedDataDate(dbInfo.createdAt))
-                LabeledContent("Regeln", value: "\(dbInfo.totalRuleCount)")
-            } else if let error = labelingStore.loadError {
-                Text(error).font(.caption).foregroundStyle(.red)
-            } else {
-                HStack {
-                    ProgressView()
-                    Text("Regeldatenbank wird geladen…").foregroundStyle(.secondary)
-                }
-            }
-
-            if labelingStore.isUpdating {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(labelingStore.updateDetail ?? "Wird aktualisiert")
-                        .font(.caption).foregroundStyle(.secondary)
-                    if let p = labelingStore.updateProgress { ProgressView(value: p) }
-                    else { ProgressView() }
-                }
-            } else {
-                Button {
-                    Task { await labelingStore.updateFromRemote() }
-                } label: {
-                    Label(
-                        labelingStore.updateAvailable ? "Regeldatenbank aktualisieren" : "Regeldaten prüfen",
-                        systemImage: "arrow.down.circle"
-                    )
-                }
-            }
-        }
-    }
-
     @ViewBuilder
     private var loadedScanSection: some View {
-        Section {
+        Section("Aktueller Scan") {
             if let entry = selectedScanEntry {
-                LabeledContent("Scan",
-                               value: entry.timestamp.formatted(date: .abbreviated, time: .shortened))
-                LabeledContent("Bilder", value: "\(entry.imageCount)")
-
-                if let result = entry.analysisResult {
-                    let areas = result.labelingAreas.detectedNames
-                    if !areas.isEmpty {
-                        LabeledContent("Erkannte Bereiche", value: areas.joined(separator: ", "))
-                    }
-                    if !result.detectedSpeciesHints.isEmpty {
-                        LabeledContent("Tierart",
-                                       value: result.detectedSpeciesHints.joined(separator: ", "))
-                    }
-                    ForEach(result.qualityWarnings, id: \.self) { warning in
-                        Label(warning, systemImage: "exclamationmark.triangle")
-                            .font(.caption).foregroundStyle(.orange)
+                NavigationLink {
+                    LabelingScanEntryPreview(
+                        entry: entry,
+                        image: scanHistory.thumbnail(for: entry)
+                    )
+                } label: {
+                    HStack(spacing: 12) {
+                        if let image = scanHistory.thumbnail(for: entry) {
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 48, height: 48)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                        } else {
+                            Image(systemName: "doc.text.magnifyingglass")
+                                .font(.title2)
+                                .frame(width: 48, height: 48)
+                                .foregroundStyle(.secondary)
+                        }
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Aktueller Scan")
+                                .font(.subheadline)
+                            Text(entry.timestamp.formatted(date: .abbreviated, time: .shortened))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            if let result = entry.analysisResult,
+                               !result.detectedSpeciesHints.isEmpty {
+                                Text(result.detectedSpeciesHints.joined(separator: ", "))
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                     }
                 }
-
-                if !entry.ocrText.isEmpty {
-                    DisclosureGroup("Erkannter Text (\(entry.ocrText.count) Zeichen)") {
-                        Text(entry.ocrText)
-                            .font(.footnote)
-                            .textSelection(.enabled)
-                    }
-                }
-
                 Button(role: .destructive) { resetCheck() } label: {
                     Label("Scan entfernen", systemImage: "xmark.circle")
                         .font(.caption)
                 }
             } else {
-                VStack(spacing: 8) {
-                    Image(systemName: "doc.text.magnifyingglass")
-                        .font(.largeTitle)
-                        .foregroundStyle(.secondary)
-                    Text("Kein Scan geladen")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    Text("Scanne ein Etikett oder wähle einen vorhandenen Scan im Scan-Tab.")
+                Text("Wähle oder erfasse einen Scan im Scan-Tab.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var labelingStatusBanner: some View {
+        Section {
+            if labelingStore.isUpdating {
+                HStack(spacing: 6) {
+                    ProgressView()
+                    Text(labelingStore.updateDetail ?? "Regeldatenbank wird aktualisiert…")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
+                if let p = labelingStore.updateProgress {
+                    ProgressView(value: p)
+                }
+            } else {
+                Button {
+                    Task { await labelingStore.updateFromRemote() }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "shield.lefthalf.filled.badge.checkmark")
+                            .foregroundStyle(.secondary)
+                        if let dbInfo = labelingStore.dbInfo {
+                            Text("Regeln v\(dbInfo.version) · \(dbInfo.totalRuleCount) Regeln · \(formattedDataDate(dbInfo.createdAt))")
+                        } else if labelingStore.loadError != nil {
+                            Text("Regeldatenbank nicht verfügbar").foregroundStyle(.red)
+                        } else {
+                            Text("Regeldatenbank wird geladen…")
+                        }
+                        Spacer()
+                        Image(systemName: labelingStore.updateAvailable
+                              ? "arrow.down.circle.fill" : "arrow.down.circle")
+                            .foregroundStyle(labelingStore.updateAvailable ? Color.blue : Color.secondary.opacity(0.4))
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
             }
-        } header: {
-            Text("Geladener Scan")
         }
     }
 
