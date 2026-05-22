@@ -504,7 +504,8 @@ def _build_patterns() -> list[tuple]:
         "Partie Nr.",
         "Losnummer",   # without colon — complements existing "Losnummer:"
         "Los-Nr.",
-        "LOT",         # common EU label abbreviation without code requirement
+        "LOT:",        # EU label field label with colon — avoids substring false-positives
+                       # (bare "LOT" would hit "Pilotversuch"; regex handles "LOT A123…")
     ], weight=0.7)
     rows += _kw("art15_004", [
         "Reference number", "batch number", "lot number", "Batch:", "Lot:",

@@ -988,3 +988,21 @@ class TestRealWorldPackagingPatterns:
         """'Vor Wärme schützen' must not trigger MHD detection."""
         assert not self._keyword_match(self._MHD_RULE, "Vor Wärme und Feuchtigkeit schützen.")
         assert not self._regex_match(self._MHD_RULE, "Vor Wärme und Feuchtigkeit schützen.")
+
+    def test_fp_pilotversuch_no_lot(self) -> None:
+        """'Pilotversuch' contains substring 'lot' but must NOT match art15_004.
+        Regression guard: bare 'LOT' keyword replaced with 'LOT:' to prevent
+        case-insensitive substring match inside compound words.
+        """
+        text = "Pilotversuch Produktionslinie 3"
+        assert not self._keyword_match("art15_004", text), (
+            "Substring 'lot' inside 'Pilotversuch' must not keyword-match art15_004"
+        )
+        assert not self._regex_match("art15_004", text)
+
+    def test_fp_lot_colon_still_matches(self) -> None:
+        """'LOT:' (with colon) must still keyword-match art15_004."""
+        text = "LOT: s. Aufdruck"
+        assert self._keyword_match("art15_004", text), (
+            "'LOT:' with colon must keyword-match art15_004"
+        )

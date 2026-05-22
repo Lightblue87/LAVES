@@ -442,6 +442,83 @@ final class LabelingControlComparisonServiceTests: XCTestCase {
         XCTAssertEqual(v!, 12.5, accuracy: 0.001)
     }
 
+    // MARK: - MHD date comparison
+
+    func testMHDDateMatched() {
+        let suggestion = LabelingRequirementSuggestion(
+            category: .bestBefore,
+            status: .mustDeclare,
+            extractedText: "MHD 31.12.2026",
+            normalizedValue: LabelingNormalizedValue(
+                numericValue: nil, unit: nil, textValue: "MHD 31.12.2026"
+            )
+        )
+        let packagingText = "MHD 31.12.2026 LOT A12345 Rohprotein 28 %"
+        let entry = LabelingControlComparisonService.compare(
+            suggestion: suggestion,
+            checkResult: makeCheckResultWithMHD(status: .found, matchedText: "MHD 31.12.2026"),
+            packagingText: packagingText
+        )
+        XCTAssertEqual(
+            entry.packagingStatus, .matched,
+            "MHD 31.12.2026 in basis AND packaging must be matched"
+        )
+    }
+
+    func testMHDDateMismatch() {
+        let suggestion = LabelingRequirementSuggestion(
+            category: .bestBefore,
+            status: .mustDeclare,
+            extractedText: "MHD 31.12.2026",
+            normalizedValue: LabelingNormalizedValue(
+                numericValue: nil, unit: nil, textValue: "MHD 31.12.2026"
+            )
+        )
+        // Packaging shows a different year
+        let packagingText = "MHD 31.12.2025 LOT A12345 Rohprotein 28 %"
+        let entry = LabelingControlComparisonService.compare(
+            suggestion: suggestion,
+            checkResult: makeCheckResultWithMHD(status: .found, matchedText: "MHD 31.12.2025"),
+            packagingText: packagingText
+        )
+        XCTAssertEqual(
+            entry.packagingStatus, .mismatch,
+            "MHD 31.12.2026 (basis) vs MHD 31.12.2025 (packaging) must be mismatch"
+        )
+    }
+
+    func testMHDNoBasisDate_AcceptedAsMatched() {
+        // Basis only has MHD keyword without concrete date → no date comparison → matched
+        let suggestion = LabelingRequirementSuggestion(
+            category: .bestBefore,
+            status: .mustDeclare,
+            extractedText: "mhd",
+            normalizedValue: LabelingNormalizedValue(
+                numericValue: nil, unit: nil, textValue: "mhd"
+            )
+        )
+        let packagingText = "MHD 31.12.2026 Rohprotein 28 %"
+        let entry = LabelingControlComparisonService.compare(
+            suggestion: suggestion,
+            checkResult: makeCheckResultWithMHD(status: .found, matchedText: "MHD 31.12.2026"),
+            packagingText: packagingText
+        )
+        XCTAssertEqual(
+            entry.packagingStatus, .matched,
+            "MHD keyword without concrete date in basis must accept packaging result as matched"
+        )
+    }
+
+    func testExtractDateFromMHD() {
+        let date = LabelingControlComparisonService.extractDate(from: "MHD 31.12.2026")
+        XCTAssertEqual(date, "31.12.2026")
+    }
+
+    func testExtractDateNilWhenNone() {
+        let date = LabelingControlComparisonService.extractDate(from: "mhd")
+        XCTAssertNil(date)
+    }
+
     // MARK: - D) Regression: no new OCR workflow / no duplicate storage
 
     func testLabelingCheckResultStructureUnchanged() {
@@ -556,6 +633,53 @@ final class LabelingControlComparisonServiceTests: XCTestCase {
             databaseInfo: nil,
             ocrText: "",
             imageItems: items,
+            additiveDeclarations: nil
+        )
+    }
+
+    private func makeCheckResultWithMHD(
+        status: RuleCheckStatus,
+        matchedText: String?
+    ) -> LabelingCheckResult {
+        let mhdRule = LabelingRule(
+            id: "art17_002_complementary",
+            regulationId: "reg_767_2009",
+            feedTypeId: "complementary_feed",
+            titleDe: "Mindesthaltbarkeitsdatum",
+            descriptionDe: "",
+            legalBasis: "",
+            requirementType: "best_before",
+            severity: .critical,
+            isMandatory: true,
+            displayOrder: 30,
+            patterns: []
+        )
+        let mhdResult = RuleCheckResult(
+            rule: mhdRule,
+            status: status,
+            matchedText: matchedText,
+            matchedLanguage: "de",
+            confidence: 1.0,
+            note: nil
+        )
+        let feedType = LabelingFeedType(
+            id: "complementary_feed",
+            nameDe: "Ergänzungsfuttermittel",
+            descriptionDe: nil,
+            keywordsDe: []
+        )
+        return LabelingCheckResult(
+            feedType: feedType,
+            feedTypeConfidence: 0.9,
+            ruleResults: [mhdResult],
+            overallStatus: .nichtPruefbar,
+            checkedAt: Date(),
+            dbVersion: "test",
+            databaseInfo: nil,
+            ocrText: "",
+            imageItems: [
+                OCRImageItem(id: UUID(), imageType: .vorderseite, thumbnailFileName: nil, ocrText: "test"),
+            ],
             additiveDeclarations: nil
         )
     }
