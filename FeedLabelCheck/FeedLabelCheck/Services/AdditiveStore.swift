@@ -19,8 +19,8 @@ final class AdditiveStore: ObservableObject {
     private let downloader = DataDownloadService()
     private let sqliteRepository = SQLiteAdditiveRepository()
     private let defaults = UserDefaults.standard
-    private let manifestSHAKey = "laves.data.sqlite.sha256"
-    private let manifestDateKey = "laves.data.generatedAt"
+    private let manifestSHAKey = "feedlabelcheck.data.sqlite.sha256"
+    private let manifestDateKey = "feedlabelcheck.data.generatedAt"
 
     private func rebuildDerivedCollections() {
         eNumbers = Array(Set(additives.map(\.eNumber).filter { !$0.isEmpty })).sorted()
@@ -152,12 +152,14 @@ final class AdditiveStore: ObservableObject {
     }
 
     private var localDatabaseURL: URL {
-        dataDirectory.appendingPathComponent("laves.sqlite")
+        dataDirectory.appendingPathComponent("feedlabelcheck.sqlite")
     }
 
     private var dataDirectory: URL {
         let baseURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return baseURL.appendingPathComponent("LAVES", isDirectory: true)
+        let dir = baseURL.appendingPathComponent("FeedLabelCheck", isDirectory: true)
+        StorageMigration.migrateIfNeeded(base: baseURL)
+        return dir
     }
 
     private func prepareDataDirectory() throws {

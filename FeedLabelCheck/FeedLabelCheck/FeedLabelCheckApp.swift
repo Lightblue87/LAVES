@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct LAVESiOSApp: App {
+struct FeedLabelCheckApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()

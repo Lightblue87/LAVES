@@ -15,20 +15,20 @@ final class LabelingRuleStore: ObservableObject {
     private let repository: LabelingRuleRepository = SQLiteLabelingRuleRepository()
     private let downloader = LabelingDownloadService()
     private let defaults = UserDefaults.standard
-    private let shaKey = "laves.labeling.sqlite.sha256"
+    private let shaKey = "feedlabelcheck.labeling.sqlite.sha256"
 
     // MARK: - Database URL
 
     private var localDatabaseURL: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        return base.appendingPathComponent("LAVES/laves_labeling.sqlite")
+        return base.appendingPathComponent("FeedLabelCheck/labeling.sqlite")
     }
 
     var activeDatabaseURL: URL? {
         if FileManager.default.fileExists(atPath: localDatabaseURL.path) {
             return localDatabaseURL
         }
-        return Bundle.main.url(forResource: "laves_labeling", withExtension: "sqlite")
+        return Bundle.main.url(forResource: "labeling", withExtension: "sqlite")
     }
 
     // MARK: - Loading
@@ -150,8 +150,8 @@ struct LabelingManifestEntry: Decodable {
 }
 
 struct LabelingDownloadService {
-    private let manifestURL = URL(string: "https://raw.githubusercontent.com/Lightblue87/LAVES-Data/main/manifest.json")!
-    private let databaseURL = URL(string: "https://raw.githubusercontent.com/Lightblue87/LAVES-Data/main/laves_labeling.sqlite")!
+    private let manifestURL = URL(string: "https://raw.githubusercontent.com/Lightblue87/FeedLabelCheck-Data/main/manifest.json")!
+    private let databaseURL = URL(string: "https://raw.githubusercontent.com/Lightblue87/FeedLabelCheck-Data/main/labeling.sqlite")!
 
     func fetchLabelingManifest() async throws -> LabelingManifestEntry {
         let (data, response) = try await URLSession.shared.data(from: manifestURL)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a small public manifest for LAVES data downloads."""
+"""Build a small public manifest for FeedLabelCheck data downloads."""
 
 from __future__ import annotations
 
@@ -41,9 +41,9 @@ def labeling_metadata(labeling_sqlite: Path) -> dict:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Build LAVES data manifest.")
-    parser.add_argument("--sqlite", type=Path, default=Path("dist/laves.sqlite"))
-    parser.add_argument("--labeling-sqlite", type=Path, default=Path("dist/laves_labeling.sqlite"))
+    parser = argparse.ArgumentParser(description="Build FeedLabelCheck data manifest.")
+    parser.add_argument("--sqlite", type=Path, default=Path("dist/feedlabelcheck.sqlite"))
+    parser.add_argument("--labeling-sqlite", type=Path, default=Path("dist/labeling.sqlite"))
     parser.add_argument("--json", type=Path, default=Path("Data/zusatzstoffe.json"))
     parser.add_argument("--out", type=Path, default=Path("dist/manifest.json"))
     args = parser.parse_args()

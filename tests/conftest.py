@@ -1,4 +1,4 @@
-"""Session-scoped pytest fixture: builds a fresh laves_labeling.sqlite
+"""Session-scoped pytest fixture: builds a fresh labeling.sqlite
 from scripts/build_labeling_db.py into a temporary directory before any
 test run.
 
@@ -43,7 +43,7 @@ def _check_schema(con: sqlite3.Connection, label: str) -> None:
 
 @pytest.fixture(scope="session")
 def fresh_db(tmp_path_factory: pytest.TempPathFactory) -> sqlite3.Connection:
-    """Build a fresh laves_labeling.sqlite and return an open connection.
+    """Build a fresh labeling.sqlite and return an open connection.
 
     Fails the entire test session with a clear message if:
     - the build script is missing
@@ -56,7 +56,7 @@ def fresh_db(tmp_path_factory: pytest.TempPathFactory) -> sqlite3.Connection:
             "Stelle sicher, dass das Repository vollständig ausgecheckt ist."
         )
 
-    out = tmp_path_factory.mktemp("laves_db") / "laves_labeling.sqlite"
+    out = tmp_path_factory.mktemp("feedlabelcheck_db") / "labeling.sqlite"
     proc = subprocess.run(
         [sys.executable, str(_BUILD_SCRIPT), "--out", str(out)],
         capture_output=True,
