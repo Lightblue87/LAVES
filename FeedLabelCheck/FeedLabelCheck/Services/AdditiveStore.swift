@@ -118,6 +118,7 @@ final class AdditiveStore: ObservableObject {
 
             updateDetail = "Datenbank wird heruntergeladen"
             let downloadedURL = try await downloader.downloadDatabase(
+                fileName: manifest.files.sqlite.name,
                 expectedSHA256: manifest.files.sqlite.sha256,
                 expectedBytes: manifest.files.sqlite.bytes,
                 progress: { [weak self] value in
