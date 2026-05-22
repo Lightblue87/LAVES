@@ -317,6 +317,25 @@ struct LabelingControlComparisonService {
 
         switch status {
         case .found, .probablyFound:
+            // If the basis document contains a concrete date, verify it appears on the packaging.
+            // "MHD 31.12.2026" (basis) vs "MHD 31.12.2025" (packaging) → mismatch.
+            if let basisDate = extractDate(from: suggestion.extractedText) {
+                if textContainsKeyword(basisDate, in: packagingText) {
+                    return ComparisonEntry(
+                        suggestion: suggestion,
+                        packagingStatus: .matched,
+                        packagingText: mhdResult?.matchedText
+                    )
+                } else {
+                    return ComparisonEntry(
+                        suggestion: suggestion,
+                        packagingStatus: .mismatch,
+                        packagingText: mhdResult?.matchedText,
+                        note: "Grundlage-Datum \(basisDate) auf Verpackungs-OCR nicht bestätigt – möglicherweise aufgedruckt."
+                    )
+                }
+            }
+            // No concrete date in basis suggestion — MHD indicator found, accept.
             return ComparisonEntry(
                 suggestion: suggestion,
                 packagingStatus: .matched,
@@ -478,6 +497,18 @@ struct LabelingControlComparisonService {
     }
 
     // MARK: - Private helpers
+
+    /// Extract the first date-like string from a text fragment.
+    /// "MHD 31.12.2026" → "31.12.2026",  "EXP 2026/12/31" → "2026/12/31"
+    static func extractDate(from text: String) -> String? {
+        let pattern = #"\d{1,2}[.\/\-]\d{1,2}[.\/\-]\d{2,4}"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(
+                  in: text, range: NSRange(text.startIndex..., in: text)
+              ),
+              let range = Range(match.range, in: text) else { return nil }
+        return String(text[range])
+    }
 
     private static func hasBottomOrLidImage(_ checkResult: LabelingCheckResult) -> Bool {
         checkResult.imageItems?.contains(where: {
