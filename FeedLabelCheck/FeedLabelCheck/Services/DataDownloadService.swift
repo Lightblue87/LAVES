@@ -42,7 +42,7 @@ struct DataDownloadService {
         fileName: String? = nil,
         expectedSHA256: String,
         expectedBytes: Int,
-        progress: @escaping @Sendable (Double) async -> Void = { _ in }
+        progress: @escaping @MainActor @Sendable (Double) -> Void = { _ in }
     ) async throws -> URL {
         let databaseURL = rawURL(fileName: fileName ?? defaultDatabaseFileName)
         debugLog("SQLite URL: \(databaseURL.absoluteString)")
@@ -88,9 +88,9 @@ struct DataDownloadService {
 }
 
 private final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelegate {
-    private let progress: @Sendable (Double) async -> Void
+    private let progress: @MainActor @Sendable (Double) -> Void
 
-    init(progress: @escaping @Sendable (Double) async -> Void) {
+    init(progress: @escaping @MainActor @Sendable (Double) -> Void) {
         self.progress = progress
     }
 
@@ -109,8 +109,8 @@ private final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelega
     ) {
         guard totalBytesExpectedToWrite > 0 else { return }
         let value = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
-        Task {
-            await progress(min(max(value, 0), 1))
+        Task { @MainActor [progress] in
+            progress(min(max(value, 0), 1))
         }
     }
 }

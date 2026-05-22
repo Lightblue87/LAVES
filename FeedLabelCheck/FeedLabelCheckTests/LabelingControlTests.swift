@@ -211,6 +211,71 @@ final class LabelingControlRegressionTests: XCTestCase {
         XCTAssertEqual(result.overallStatus, .nichtPruefbar)
     }
 
+    func testAnimalSpeciesHintUpgradesMissingRule() {
+        let rule = makeDummyRule(
+            id: "art17_001",
+            requirementType: "animal_species",
+            patterns: [
+                LabelingRulePattern(
+                    id: "p1",
+                    ruleId: "art17_001",
+                    patternType: "keyword",
+                    patternValue: "für Katzen",
+                    patternLanguage: "de",
+                    confidenceWeight: 1.0,
+                    isNegativePattern: false
+                )
+            ]
+        )
+        let result = LabelingCheckService.check(
+            ocrText: "Ergänzungsfuttermittel für ausgewachsene Katzen Zusammensetzung Fleisch Rohprotein 28 Prozent",
+            feedType: makeDummyFeedType(),
+            feedTypeConfidence: 0.9,
+            rules: [rule],
+            dbInfo: nil,
+            detectedSpeciesHints: ["Katze"]
+        )
+
+        XCTAssertEqual(result.ruleResults.first?.status, .found)
+        XCTAssertEqual(result.ruleResults.first?.matchedText, "Katze")
+    }
+
+    func testStructuredAdditiveDeclarationUpgradesMissingAdditiveRule() {
+        let rule = makeDummyRule(
+            id: "art15_006",
+            requirementType: "additives",
+            patterns: [
+                LabelingRulePattern(
+                    id: "p1",
+                    ruleId: "art15_006",
+                    patternType: "keyword",
+                    patternValue: "Zusatzstoffe",
+                    patternLanguage: "de",
+                    confidenceWeight: 1.0,
+                    isNegativePattern: false
+                )
+            ]
+        )
+        let declaration = AdditiveDeclaration(
+            substanceName: "Taurin",
+            amount: ParsedAdditiveAmount(value: 1000, unit: "mg/kg", rawText: "1000 mg/kg"),
+            rawText: "Taurin 1000 mg/kg",
+            confidence: .exactMatch,
+            matchedAdditive: nil
+        )
+        let result = LabelingCheckService.check(
+            ocrText: "Ergaenzungsfuttermittel fuer Katzen Taurin 1000 mg/kg Rohprotein 28 Prozent",
+            feedType: makeDummyFeedType(),
+            feedTypeConfidence: 0.9,
+            rules: [rule],
+            dbInfo: nil,
+            additiveDeclarations: [declaration]
+        )
+
+        XCTAssertEqual(result.ruleResults.first?.status, .found)
+        XCTAssertTrue(result.ruleResults.first?.note?.contains("Strukturierte Zusatzstoffdeklaration") == true)
+    }
+
     func testScanEntryBackwardCompatibilityUnchanged() throws {
         // ScanEntry must still decode legacy JSON (no new required fields)
         let json = """

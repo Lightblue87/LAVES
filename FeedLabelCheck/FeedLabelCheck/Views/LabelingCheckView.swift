@@ -31,7 +31,6 @@ struct LabelingCheckView: View {
                 feedTypeSection
                 actionSection
                 controlComparisonSection
-                historySection
             }
             .navigationTitle("Kennzeichnung")
             .toolbar {
@@ -148,7 +147,7 @@ struct LabelingCheckView: View {
                     Text("Kein Scan geladen")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                    Text("Scanne ein Etikett im Scan-Tab oder lade einen vorhandenen Scan aus der Scan-Historie.")
+                    Text("Scanne ein Etikett oder wähle einen vorhandenen Scan im Scan-Tab.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -349,31 +348,6 @@ struct LabelingCheckView: View {
         }
     }
 
-    private var historySection: some View {
-        Section("Scan-Historie") {
-            NavigationLink {
-                ScanHistoryPickerView(service: scanHistory, title: "Kennzeichnungs-Scans") { entry in
-                    LabelingScanEntryPreview(entry: entry, image: scanHistory.thumbnail(for: entry))
-                        .onAppear {
-                            selectedScanEntry = entry
-                            applyScanEntry(entry)
-                        }
-                }
-            } label: {
-                Label("Aus Scan-Historie laden", systemImage: "clock.arrow.circlepath")
-            }
-
-            if let latest = scanHistory.entries.first {
-                Button {
-                    selectedScanEntry = latest
-                    applyScanEntry(latest)
-                } label: {
-                    Label("Letzten Scan laden", systemImage: "arrow.clockwise")
-                }
-            }
-        }
-    }
-
     // MARK: - Logic
 
     private var activeFeedType: LabelingFeedType? {
@@ -462,6 +436,7 @@ struct LabelingCheckView: View {
             dbInfo: labelingStore.dbInfo,
             forcedNotCheckableRulePrefixes: notCheckablePrefixes,
             imageItems: entry.imageItems,
+            detectedSpeciesHints: entry.analysisResult?.detectedSpeciesHints ?? [],
             additiveDeclarations: declarations
         )
         checkResult = result

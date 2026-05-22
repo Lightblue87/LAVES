@@ -16,6 +16,8 @@ final class LabelingRuleStore: ObservableObject {
     private let downloader = LabelingDownloadService()
     private let defaults = UserDefaults.standard
     private let shaKey = "feedlabelcheck.labeling.sqlite.sha256"
+    private var didCheckForUpdates = false
+    private var isCheckingForUpdates = false
 
     // MARK: - Database URL
 
@@ -60,7 +62,12 @@ final class LabelingRuleStore: ObservableObject {
     // MARK: - Updates
 
     func checkForUpdates() async {
-        guard !isUpdating else { return }
+        guard !isUpdating, !isCheckingForUpdates, !didCheckForUpdates else { return }
+        isCheckingForUpdates = true
+        defer {
+            isCheckingForUpdates = false
+            didCheckForUpdates = true
+        }
         do {
             let manifest = try await downloader.fetchLabelingManifest()
             let stored = defaults.string(forKey: shaKey)
@@ -99,10 +106,8 @@ final class LabelingRuleStore: ObservableObject {
                 expectedSHA256: manifest.sha256,
                 expectedBytes: manifest.bytes,
                 progress: { [weak self] v in
-                    await MainActor.run {
-                        self?.updateProgress = v
-                        self?.updateDetail = "Herunterladen (\(Int(v * 100)) %)"
-                    }
+                    self?.updateProgress = v
+                    self?.updateDetail = "Herunterladen (\(Int(v * 100)) %)"
                 }
             )
 
@@ -177,7 +182,7 @@ struct LabelingDownloadService {
         fileName: String? = nil,
         expectedSHA256: String,
         expectedBytes: Int,
-        progress: @escaping @Sendable (Double) async -> Void = { _ in }
+        progress: @escaping @MainActor @Sendable (Double) -> Void = { _ in }
     ) async throws -> URL {
         let databaseURL = rawURL(fileName: fileName ?? defaultDatabaseFileName)
         debugLog("SQLite URL: \(databaseURL.absoluteString)")
@@ -221,13 +226,15 @@ enum LabelingDownloadError: LocalizedError {
 }
 
 private final class LabelingDownloadProgressDelegate: NSObject, URLSessionDownloadDelegate {
-    private let progress: @Sendable (Double) async -> Void
-    init(progress: @escaping @Sendable (Double) async -> Void) { self.progress = progress }
+    private let progress: @MainActor @Sendable (Double) -> Void
+    init(progress: @escaping @MainActor @Sendable (Double) -> Void) { self.progress = progress }
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {}
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
                     didWriteData: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
         guard totalBytesExpectedToWrite > 0 else { return }
         let v = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
-        Task { await progress(min(max(v, 0), 1)) }
+        Task { @MainActor [progress] in
+            progress(min(max(v, 0), 1))
+        }
     }
 }

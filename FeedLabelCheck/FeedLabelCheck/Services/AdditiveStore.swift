@@ -21,6 +21,8 @@ final class AdditiveStore: ObservableObject {
     private let defaults = UserDefaults.standard
     private let manifestSHAKey = "feedlabelcheck.data.sqlite.sha256"
     private let manifestDateKey = "feedlabelcheck.data.generatedAt"
+    private var didCheckForUpdates = false
+    private var isCheckingForUpdates = false
 
     private func rebuildDerivedCollections() {
         eNumbers = Array(Set(additives.map(\.eNumber).filter { !$0.isEmpty })).sorted()
@@ -80,7 +82,12 @@ final class AdditiveStore: ObservableObject {
     }
 
     func checkForUpdates() async {
-        guard !isUpdating else { return }
+        guard !isUpdating, !isCheckingForUpdates, !didCheckForUpdates else { return }
+        isCheckingForUpdates = true
+        defer {
+            isCheckingForUpdates = false
+            didCheckForUpdates = true
+        }
         do {
             let manifest = try await downloader.fetchManifest()
             let isNew = defaults.string(forKey: manifestSHAKey) != manifest.files.sqlite.sha256
@@ -122,10 +129,8 @@ final class AdditiveStore: ObservableObject {
                 expectedSHA256: manifest.files.sqlite.sha256,
                 expectedBytes: manifest.files.sqlite.bytes,
                 progress: { [weak self] value in
-                    await MainActor.run {
-                        self?.updateProgress = value
-                        self?.updateDetail = "Datenbank wird heruntergeladen (\(Int(value * 100)) %)"
-                    }
+                    self?.updateProgress = value
+                    self?.updateDetail = "Datenbank wird heruntergeladen (\(Int(value * 100)) %)"
                 }
             )
 

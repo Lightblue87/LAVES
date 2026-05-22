@@ -11,6 +11,10 @@ struct SingleCheckView: View {
     @State private var substance = ""
     @State private var value = ""
     @State private var result: EvaluationResult?
+    @State private var lastAppliedScanID: UUID?
+    @State private var isApplyingScanContext = false
+
+    private let scanService = IngredientScanService()
 
     var body: some View {
         NavigationStack {
@@ -22,7 +26,7 @@ struct SingleCheckView: View {
                     }
                 }
 
-                Section("Scan-Historie") {
+                Section("Aktueller Scan") {
                     if let selectedScanEntry {
                         NavigationLink {
                             AdditiveScanResultView(entry: selectedScanEntry, store: store, scanHistory: scanHistory)
@@ -49,14 +53,10 @@ struct SingleCheckView: View {
                                 }
                             }
                         }
-                    }
-
-                    NavigationLink {
-                        ScanHistoryPickerView(service: scanHistory, title: "Zusatzstoff-Scans") { entry in
-                            AdditiveScanResultView(entry: entry, store: store, scanHistory: scanHistory)
-                        }
-                    } label: {
-                        Label("Gespeicherte Scans", systemImage: "clock.arrow.circlepath")
+                    } else {
+                        Text("Wähle oder erfasse einen Scan im Scan-Tab.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                 }
 
@@ -67,6 +67,7 @@ struct SingleCheckView: View {
                         }
                     }
                     .onChange(of: animalCategory) { _, _ in
+                        guard !isApplyingScanContext else { return }
                         selectedSpecies = "Alle Tierarten"
                         resetAdditiveSelection()
                     }
@@ -76,7 +77,13 @@ struct SingleCheckView: View {
                         }
                     }
                     .onChange(of: selectedSpecies) { _, _ in
+                        guard !isApplyingScanContext else { return }
                         resetAdditiveSelection()
+                    }
+                    if let selectedScanEntry,
+                       let summary = scanContextSummary(for: selectedScanEntry) {
+                        LabeledContent("Aus Scan erkannt", value: summary)
+                            .font(.caption)
                     }
                 }
 
@@ -130,11 +137,19 @@ struct SingleCheckView: View {
                 DataStatusBanner(status: store.dataStatusBrief)
             }
             .navigationTitle("Zusatzstoffe")
+            .onAppear {
+                applyScanContextIfNeeded()
+            }
+            .onChange(of: selectedScanEntry) { _, _ in
+                applyScanContextIfNeeded(force: true)
+            }
+            .onChange(of: store.additives.count) { _, _ in
+                applyScanContextIfNeeded()
+            }
         }
     }
 
     private var availableENumbers: [String] {
-        guard !substance.isEmpty else { return store.eNumbers }
         let filtered = EvaluationService.filteredENumbers(
             in: store.additives, substance: substance,
             animalCategory: animalCategory, selectedSpecies: selectedSpecies
@@ -143,7 +158,6 @@ struct SingleCheckView: View {
     }
 
     private var availableSubstances: [String] {
-        guard !eNumber.isEmpty else { return store.substances }
         let filtered = EvaluationService.filteredSubstances(
             in: store.additives, eNumber: eNumber,
             animalCategory: animalCategory, selectedSpecies: selectedSpecies
@@ -163,6 +177,120 @@ struct SingleCheckView: View {
         eNumber = ""
         substance = ""
         result = nil
+    }
+
+    private func applyScanContextIfNeeded(force: Bool = false) {
+        guard let entry = selectedScanEntry,
+              !entry.ocrText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              !store.additives.isEmpty else { return }
+        guard force || lastAppliedScanID != entry.id else { return }
+
+        isApplyingScanContext = true
+        defer {
+            DispatchQueue.main.async {
+                isApplyingScanContext = false
+            }
+        }
+
+        let animals = entry.analysisResult?.detectedSpeciesHints.isEmpty == false
+            ? entry.analysisResult?.detectedSpeciesHints ?? []
+            : scanService.detectedAnimals(in: entry.ocrText).map(\.label)
+
+        if let context = bestAnimalContext(from: animals) {
+            animalCategory = context.category
+            selectedSpecies = context.species
+        }
+
+        if let match = bestAdditiveMatch(for: entry.ocrText) {
+            if animalCategory == "Alle Kategorien",
+               let category = match.additive.animalCategory,
+               !category.isEmpty,
+               store.animalCategories.contains(category) {
+                animalCategory = category
+            }
+            eNumber = match.additive.eNumber
+            substance = match.additive.name
+            result = nil
+        }
+
+        lastAppliedScanID = entry.id
+    }
+
+    private func bestAnimalContext(from hints: [String]) -> (category: String, species: String)? {
+        let normalizedHints = hints.map(normalizeForLookup).filter { !$0.isEmpty }
+        guard !normalizedHints.isEmpty else { return nil }
+
+        for category in store.animalCategories where category != "Alle Kategorien" {
+            let species = store.species(for: category)
+            for candidate in species where candidate != "Alle Tierarten" {
+                let normalizedCandidate = normalizeForLookup(candidate)
+                if normalizedHints.contains(where: {
+                    normalizedCandidate.contains($0) || $0.contains(normalizedCandidate)
+                }) {
+                    return (category, candidate)
+                }
+            }
+        }
+
+        for additive in store.additives {
+            guard let category = additive.animalCategory,
+                  category != "Alle Tierarten",
+                  store.animalCategories.contains(category) else { continue }
+            let extracted = EvaluationService.extractIndividualSpecies(
+                from: additive.normalizedSpecies,
+                category: category
+            )
+            for candidate in extracted {
+                let normalizedCandidate = normalizeForLookup(candidate)
+                if normalizedHints.contains(where: {
+                    normalizedCandidate.contains($0) || $0.contains(normalizedCandidate)
+                }) {
+                    return (category, candidate)
+                }
+            }
+        }
+
+        return nil
+    }
+
+    private func bestAdditiveMatch(for text: String) -> AdditiveMatch? {
+        scanService.matchAdditives(in: text, additives: store.additives)
+            .sorted { lhs, rhs in
+                score(lhs) > score(rhs)
+            }
+            .first
+    }
+
+    private func score(_ match: AdditiveMatch) -> Int {
+        switch match.confidence {
+        case .sicher: return 3
+        case .wahrscheinlich: return 2
+        case .unsicher: return 1
+        }
+    }
+
+    private func scanContextSummary(for entry: ScanEntry) -> String? {
+        var parts: [String] = []
+        let animals = entry.analysisResult?.detectedSpeciesHints ?? []
+        if !animals.isEmpty {
+            parts.append(animals.joined(separator: ", "))
+        }
+        if let names = entry.analysisResult?.additiveHints.detectedSubstanceNames,
+           !names.isEmpty {
+            parts.append(names.prefix(2).joined(separator: ", "))
+        } else if entry.analysisResult?.additiveHints.hasENumbers == true {
+            parts.append("E-Nummer")
+        } else if entry.analysisResult?.additiveHints.hasAdditiveSection == true {
+            parts.append("Zusatzstoffe")
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    private func normalizeForLookup(_ value: String) -> String {
+        value
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .lowercased()
+            .replacingOccurrences(of: #"[^a-z0-9]+"#, with: "", options: .regularExpression)
     }
 
     private func runCheck() {
