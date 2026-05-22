@@ -24,26 +24,34 @@ struct DataManifest: Decodable {
 }
 
 struct DataDownloadService {
-    private let manifestURL = URL(string: "https://raw.githubusercontent.com/Lightblue87/FeedLabelCheck-Data/main/manifest.json")!
-    private let databaseURL = URL(string: "https://raw.githubusercontent.com/Lightblue87/FeedLabelCheck-Data/main/feedlabelcheck.sqlite")!
+    private let rawBaseURL = URL(string: "https://raw.githubusercontent.com/Lightblue87/FeedLabelCheck-Data/main/")!
+    private let defaultDatabaseFileName = "feedlabelcheck.sqlite"
+
+    var manifestURL: URL {
+        rawBaseURL.appendingPathComponent("manifest.json")
+    }
 
     func fetchManifest() async throws -> DataManifest {
+        debugLog("Manifest URL: \(manifestURL.absoluteString)")
         let (data, response) = try await URLSession.shared.data(from: manifestURL)
-        try validateHTTP(response)
+        try validateHTTP(response, url: manifestURL)
         return try JSONDecoder().decode(DataManifest.self, from: data)
     }
 
     func downloadDatabase(
+        fileName: String? = nil,
         expectedSHA256: String,
         expectedBytes: Int,
         progress: @escaping @Sendable (Double) async -> Void = { _ in }
     ) async throws -> URL {
+        let databaseURL = rawURL(fileName: fileName ?? defaultDatabaseFileName)
+        debugLog("SQLite URL: \(databaseURL.absoluteString)")
         let request = URLRequest(url: databaseURL)
         let delegate = DownloadProgressDelegate(progress: progress)
         let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
         let (downloadedURL, response) = try await session.download(for: request)
         session.finishTasksAndInvalidate()
-        try validateHTTP(response)
+        try validateHTTP(response, url: databaseURL)
 
         let data = try Data(contentsOf: downloadedURL)
         guard data.count == expectedBytes else {
@@ -58,11 +66,21 @@ struct DataDownloadService {
         return downloadedURL
     }
 
-    private func validateHTTP(_ response: URLResponse) throws {
+    func rawURL(fileName: String) -> URL {
+        rawBaseURL.appendingPathComponent(fileName)
+    }
+
+    private func validateHTTP(_ response: URLResponse, url: URL) throws {
         guard let httpResponse = response as? HTTPURLResponse else { return }
         guard (200..<300).contains(httpResponse.statusCode) else {
-            throw DataDownloadError.httpStatus(httpResponse.statusCode)
+            throw DataDownloadError.httpStatus(httpResponse.statusCode, url: url)
         }
+    }
+
+    private func debugLog(_ message: String) {
+        #if DEBUG
+        print("[DataDownloadService] \(message)")
+        #endif
     }
 }
 
@@ -95,14 +113,17 @@ private final class DownloadProgressDelegate: NSObject, URLSessionDownloadDelega
 }
 
 enum DataDownloadError: LocalizedError {
-    case httpStatus(Int)
+    case httpStatus(Int, url: URL)
     case invalidSize(expected: Int, actual: Int)
     case invalidChecksum
 
     var errorDescription: String? {
         switch self {
-        case .httpStatus(let status):
-            return "Download fehlgeschlagen: HTTP \(status)."
+        case .httpStatus(let status, let url):
+            if status == 404 {
+                return "Download fehlgeschlagen: Datei nicht gefunden (HTTP 404). URL: \(url.absoluteString)"
+            }
+            return "Download fehlgeschlagen: HTTP \(status). URL: \(url.absoluteString)"
         case .invalidSize(let expected, let actual):
             return "Download unvollständig: erwartet \(expected) Bytes, erhalten \(actual) Bytes."
         case .invalidChecksum:

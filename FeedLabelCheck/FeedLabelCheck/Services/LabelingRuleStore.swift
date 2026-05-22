@@ -95,6 +95,7 @@ final class LabelingRuleStore: ObservableObject {
 
             updateDetail = "Herunterladen"
             let downloaded = try await downloader.downloadLabelingDatabase(
+                fileName: manifest.file,
                 expectedSHA256: manifest.sha256,
                 expectedBytes: manifest.bytes,
                 progress: { [weak self] v in
@@ -150,13 +151,18 @@ struct LabelingManifestEntry: Decodable {
 }
 
 struct LabelingDownloadService {
-    private let manifestURL = URL(string: "https://raw.githubusercontent.com/Lightblue87/FeedLabelCheck-Data/main/manifest.json")!
-    private let databaseURL = URL(string: "https://raw.githubusercontent.com/Lightblue87/FeedLabelCheck-Data/main/labeling.sqlite")!
+    private let rawBaseURL = URL(string: "https://raw.githubusercontent.com/Lightblue87/FeedLabelCheck-Data/main/")!
+    private let defaultDatabaseFileName = "labeling.sqlite"
+
+    var manifestURL: URL {
+        rawBaseURL.appendingPathComponent("manifest.json")
+    }
 
     func fetchLabelingManifest() async throws -> LabelingManifestEntry {
+        debugLog("Manifest URL: \(manifestURL.absoluteString)")
         let (data, response) = try await URLSession.shared.data(from: manifestURL)
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            throw DataDownloadError.httpStatus(http.statusCode)
+            throw DataDownloadError.httpStatus(http.statusCode, url: manifestURL)
         }
         // The manifest may or may not have labeling_db yet; decode leniently
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -168,16 +174,19 @@ struct LabelingDownloadService {
     }
 
     func downloadLabelingDatabase(
+        fileName: String? = nil,
         expectedSHA256: String,
         expectedBytes: Int,
         progress: @escaping @Sendable (Double) async -> Void = { _ in }
     ) async throws -> URL {
+        let databaseURL = rawURL(fileName: fileName ?? defaultDatabaseFileName)
+        debugLog("SQLite URL: \(databaseURL.absoluteString)")
         let delegate = LabelingDownloadProgressDelegate(progress: progress)
         let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
         let (url, response) = try await session.download(for: URLRequest(url: databaseURL))
         session.finishTasksAndInvalidate()
         if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            throw DataDownloadError.httpStatus(http.statusCode)
+            throw DataDownloadError.httpStatus(http.statusCode, url: databaseURL)
         }
 
         let data = try Data(contentsOf: url)
@@ -189,6 +198,16 @@ struct LabelingDownloadService {
             throw DataDownloadError.invalidChecksum
         }
         return url
+    }
+
+    func rawURL(fileName: String) -> URL {
+        rawBaseURL.appendingPathComponent(fileName)
+    }
+
+    private func debugLog(_ message: String) {
+        #if DEBUG
+        print("[LabelingDownloadService] \(message)")
+        #endif
     }
 }
 
