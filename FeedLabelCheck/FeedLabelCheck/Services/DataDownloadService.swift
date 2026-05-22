@@ -28,7 +28,7 @@ struct DataDownloadService {
     private let defaultDatabaseFileName = "feedlabelcheck.sqlite"
 
     var manifestURL: URL {
-        rawBaseURL.appendingPathComponent("manifest.json")
+        rawBaseURL.appendingPathComponent("manifest-v2.json")
     }
 
     func fetchManifest() async throws -> DataManifest {

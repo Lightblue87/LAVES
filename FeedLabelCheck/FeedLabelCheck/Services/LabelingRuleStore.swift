@@ -163,7 +163,7 @@ struct LabelingDownloadService {
     private let defaultDatabaseFileName = "labeling.sqlite"
 
     var manifestURL: URL {
-        rawBaseURL.appendingPathComponent("manifest.json")
+        rawBaseURL.appendingPathComponent("manifest-v2.json")
     }
 
     func fetchLabelingManifest() async throws -> LabelingManifestEntry {
