@@ -97,9 +97,15 @@ class TestFeedTypeDetection:
 # ------------------------------------------------------------------
 
 LOT_PATTERNS = [
-    # \b after keyword: prevents matching inside compound words (e.g. "Chargenangabe")
-    # \d requirement: prevents matching reference redirects ("Partie: siehe Boden-Aufdruck")
+    # 1. Standard short keyword + compact code (at least one digit required)
+    #    (?!\w) prevents matching inside compound words (e.g. "Chargenangabe")
     r"\b(LOT|L|Charge|Chargen-Nr\.?|Los|Partie)(?!\w)\s?[:\-]?\s?[A-Z0-9\-\/]*\d[A-Z0-9\-\/]*\b",
+    # 2. Long-form labels: Zulassungsnummer / Kennnummer der Partie + space-separated code
+    #    Requires ≥4 digits → prevents matching "siehe Boden-Aufdruck" (no digits)
+    r"\b(?:Zulassungsnummer|Kennnummer)\s+der\s+Partie\s*[:\-]?\s*[A-Z]{1,5}\s*\d{4,}[A-Z0-9]*\b",
+    # 3. EXP + date + trailing alphanumeric code heuristic
+    #    "EXP: 29.11.2026 NU250529H" — code after date is likely a batch/lot number
+    r"\bEXP\s*:?\s*\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{2,4}\s+[A-Z]{1,4}\d{4,}[A-Z0-9]*\b",
 ]
 
 
@@ -118,6 +124,11 @@ class TestLotNumberPattern:
             ("Chargenangabe: A2024", False),
             ("CHOLESTEROL 200mg", False),
             ("Produktbeschreibung ohne Angabe", False),
+            # Real-packaging additions (Kennzeichnungen.pdf)
+            ("Zulassungsnummer der Partie: BAF 1015090925", True),  # pattern 2: space-sep code
+            ("EXP: 29.11.2026 NU250529H", True),                    # pattern 3: EXP heuristic
+            ("LOT", False),                                          # keyword-only, no code
+            ("kühl und trocken lagern", False),                      # false-positive guard
         ],
     )
     def test_lot_pattern(self, text: str, expected: bool) -> None:
@@ -158,7 +169,14 @@ class TestNetQuantityPattern:
 # ------------------------------------------------------------------
 
 BBD_PATTERNS = [
-    r"\b(MHD|BBD|mindestens haltbar bis)[:\s]*\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{2,4}\b",
+    # German/general: standard abbreviations + concrete DD.MM.YYYY date
+    # Includes "haltbar bis" (without "mindestens") for "-18°C haltbar bis: 09.12.26"
+    r"\b(MHD|BBD|mindestens haltbar bis|haltbar bis|verwendbar bis)"
+    r"[:\s]*\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{2,4}\b",
+    # English/international: EXP / BBE + concrete date
+    # Covers "EXP: 29.11.2026" and "BBE 01.03.2027"
+    r"\b(EXP|BBE|best before|use before|use by|expiry|expiration)"
+    r"[:\s.]*\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{2,4}\b",
 ]
 BBD_KEYWORDS = [
     "Mindesthaltbarkeit",
@@ -167,6 +185,9 @@ BBD_KEYWORDS = [
     "best before",
     "verwendbar bis",
     "haltbar bis",
+    "EXP:",   # with colon — specific enough as standalone keyword
+    "BBE",
+    "use by",
 ]
 
 
@@ -181,6 +202,10 @@ class TestBestBeforePattern:
             ("mindestens haltbar bis 01/2026", False),
             ("best before 12/2025", False),
             ("Kein Ablaufdatum vorhanden", False),
+            # Real-packaging additions (Kennzeichnungen.pdf)
+            ("EXP: 29.11.2026", True),       # Brit snack — EXP + date → second BBD pattern
+            ("haltbar bis: 09.12.26", True),  # proCani — haltbar bis + short year
+            ("EXP 01.03.2027", True),         # EXP without colon
         ],
     )
     def test_bbd_regex(self, text: str, expected: bool) -> None:
@@ -794,3 +819,172 @@ class TestPatternQuality:
         """'Vertrieb: Fountain GmbH & Co. KG' must produce ≥0.85 in art17_005."""
         text = "Vertrieb: Fountain GmbH & Co. KG"
         assert self._high_weight_match("art17_005_pet", text)
+
+
+# ------------------------------------------------------------------
+# 13. Real-world packaging examples  (DB-backed)
+# Based on products in feedlabelcheck_label_training/Kennzeichnungen.pdf
+# ------------------------------------------------------------------
+
+
+class TestRealWorldPackagingPatterns:
+    """Regression tests for the four concrete packaging examples from
+    Kennzeichnungen.pdf.  Each test validates the semantic contract:
+      keyword match only → probablyFound (no high-quality regex)
+      regex match → found (high-quality confidence)
+
+    False-positive guards ensure generic storage/temperature text never
+    triggers a LOT or MHD rule.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _db(self, fresh_db: sqlite3.Connection) -> None:
+        self.con = fresh_db
+
+    def _patterns(self, rule_id: str) -> list[tuple[str, str, str, float]]:
+        return self.con.execute(
+            "SELECT pattern_type, pattern_value, pattern_language, confidence_weight "
+            "FROM labeling_rule_patterns WHERE rule_id = ?",
+            (rule_id,),
+        ).fetchall()
+
+    def _keyword_match(self, rule_id: str, text: str) -> bool:
+        for ptype, pvalue, _lang, _w in self._patterns(rule_id):
+            if ptype == "keyword" and keyword_match(pvalue, text):
+                return True
+        return False
+
+    def _regex_match(self, rule_id: str, text: str) -> bool:
+        for ptype, pvalue, _lang, _w in self._patterns(rule_id):
+            if ptype == "regex" and regex_match(pvalue, text):
+                return True
+        return False
+
+    # MHD rule for complementary feed products (mammaly, Brit, proCani are all
+    # Ergänzungsfuttermittel).  All art17_002_* rules share the same patterns.
+    _MHD_RULE = "art17_002_complementary"
+
+    # ------------------------------------------------------------------
+    # Case 1 — mammaly Perfect Weight
+    # "Mindestens haltbar bis & Kennnummer der Partie: s. Aufdruck"
+    # Both fields redirect to the print-on — no concrete date or code visible.
+    # Expected: keyword match (probablyFound), NO regex match (not found).
+    # ------------------------------------------------------------------
+
+    def test_case1_mhd_redirect_keyword_only(self) -> None:
+        """MHD reference redirect: keyword hit, but no date → no regex match."""
+        text = "Mindestens haltbar bis & Kennnummer der Partie: s. Aufdruck"
+        assert self._keyword_match(self._MHD_RULE, text), (
+            f"'mindestens haltbar bis' keyword must match {self._MHD_RULE}"
+        )
+        assert not self._regex_match(self._MHD_RULE, text), (
+            "reference redirect without a date must NOT produce a regex match"
+        )
+
+    def test_case1_lot_redirect_keyword_only(self) -> None:
+        """LOT reference redirect: keyword hit, but no code → no regex match."""
+        text = "Mindestens haltbar bis & Kennnummer der Partie: s. Aufdruck"
+        assert self._keyword_match("art15_004", text), (
+            "'Kennnummer der Partie' keyword must match art15_004"
+        )
+        assert not self._regex_match("art15_004", text), (
+            "reference redirect without alphanumeric code must NOT regex-match"
+        )
+
+    # ------------------------------------------------------------------
+    # Case 2 — Brit Functional Snack
+    # "EXP: 29.11.2026 NU250529H"
+    # EXP+date → MHD found; trailing code → LOT probablyFound.
+    # ------------------------------------------------------------------
+
+    def test_case2_exp_date_mhd_regex_found(self) -> None:
+        """'EXP: 29.11.2026' must regex-match the MHD rule (found)."""
+        text = "EXP: 29.11.2026 NU250529H"
+        assert self._regex_match(self._MHD_RULE, text), (
+            f"EXP + date must produce a regex match for {self._MHD_RULE}"
+        )
+
+    def test_case2_exp_lot_heuristic_matches(self) -> None:
+        """'EXP: 29.11.2026 NU250529H' must regex-match art15_004 (LOT probablyFound)."""
+        text = "EXP: 29.11.2026 NU250529H"
+        assert self._regex_match("art15_004", text), (
+            "EXP date + trailing batch code must produce a regex match for art15_004"
+        )
+
+    # ------------------------------------------------------------------
+    # Case 3 — proCani with storage temperature
+    # "-18°C haltbar bis: 09.12.26"
+    # MHD found; "-18°C" alone must NOT trigger any rule.
+    # ------------------------------------------------------------------
+
+    def test_case3_frozen_mhd_regex_found(self) -> None:
+        """'-18°C haltbar bis: 09.12.26' must regex-match the MHD rule."""
+        text = "-18°C haltbar bis: 09.12.26"
+        assert self._regex_match(self._MHD_RULE, text), (
+            "'haltbar bis: 09.12.26' must match MHD regex even with temperature prefix"
+        )
+
+    def test_case3_temperature_alone_no_mhd(self) -> None:
+        """-18°C alone must NOT trigger any MHD keyword or regex."""
+        text = "-18°C"
+        assert not self._keyword_match(self._MHD_RULE, text), (
+            "temperature-only text must not keyword-match the MHD rule"
+        )
+        assert not self._regex_match(self._MHD_RULE, text), (
+            "temperature-only text must not regex-match the MHD rule"
+        )
+
+    def test_case3_temperature_alone_no_lot(self) -> None:
+        """-18°C alone must NOT trigger any LOT keyword or regex."""
+        text = "-18°C"
+        assert not self._keyword_match("art15_004", text), (
+            "temperature-only text must not keyword-match art15_004"
+        )
+        assert not self._regex_match("art15_004", text), (
+            "temperature-only text must not regex-match art15_004"
+        )
+
+    # ------------------------------------------------------------------
+    # Case 4 — proCani Zulassungsnummer der Partie
+    # "Zulassungsnummer der Partie: BAF 1015090925"
+    # LOT keyword AND regex must match.
+    # ------------------------------------------------------------------
+
+    def test_case4_zulassungsnummer_keyword_match(self) -> None:
+        """'Zulassungsnummer der Partie' keyword must match art15_004."""
+        text = "Zulassungsnummer der Partie: BAF 1015090925"
+        assert self._keyword_match("art15_004", text), (
+            "'Zulassungsnummer der Partie' must keyword-match art15_004"
+        )
+
+    def test_case4_zulassungsnummer_regex_found(self) -> None:
+        """'Zulassungsnummer der Partie: BAF 1015090925' must regex-match art15_004."""
+        text = "Zulassungsnummer der Partie: BAF 1015090925"
+        assert self._regex_match("art15_004", text), (
+            "Zulassungsnummer der Partie + space-separated code must regex-match art15_004"
+        )
+
+    # ------------------------------------------------------------------
+    # False-positive guards
+    # ------------------------------------------------------------------
+
+    def test_fp_storage_text_no_lot(self) -> None:
+        """'kühl und trocken lagern' must never match any LOT pattern."""
+        text = "kühl und trocken lagern"
+        assert not self._keyword_match("art15_004", text)
+        assert not self._regex_match("art15_004", text)
+
+    def test_fp_storage_text_no_mhd(self) -> None:
+        """'kühl und trocken lagern' must never match any MHD pattern."""
+        text = "kühl und trocken lagern"
+        assert not self._keyword_match(self._MHD_RULE, text)
+        assert not self._regex_match(self._MHD_RULE, text)
+
+    def test_fp_generic_kuehl_no_lot(self) -> None:
+        """Generic 'kühl lagern' instruction must not trigger LOT detection."""
+        assert not self._regex_match("art15_004", "Kühl und trocken bei max. 25°C lagern.")
+
+    def test_fp_storage_instruction_no_mhd(self) -> None:
+        """'Vor Wärme schützen' must not trigger MHD detection."""
+        assert not self._keyword_match(self._MHD_RULE, "Vor Wärme und Feuchtigkeit schützen.")
+        assert not self._regex_match(self._MHD_RULE, "Vor Wärme und Feuchtigkeit schützen.")
