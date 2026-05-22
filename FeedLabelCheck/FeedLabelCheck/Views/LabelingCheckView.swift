@@ -16,15 +16,21 @@ struct LabelingCheckView: View {
     @State private var checkError: String?
     @State private var isResultPresented = false
 
+    /// Combined control session (basis document + comparison). Lives entirely
+    /// in this view — no new storage path, no new OCR workflow.
+    @StateObject private var controlSession = LabelingControlSession()
+
     private let detector = LabelingFeedTypeDetector()
 
     var body: some View {
         NavigationStack {
             Form {
                 databaseSection
+                controlBasisSection
                 loadedScanSection
                 feedTypeSection
                 actionSection
+                controlComparisonSection
                 historySection
             }
             .navigationTitle("Kennzeichnung")
@@ -240,6 +246,109 @@ struct LabelingCheckView: View {
         }
     }
 
+    // MARK: - Kontrollgrundlage
+
+    @ViewBuilder
+    private var controlBasisSection: some View {
+        Section {
+            Picker("Dokumenttyp", selection: $controlSession.basisDocumentType) {
+                ForEach(BasisDocumentType.allCases) { type in
+                    Label(type.displayName, systemImage: type.systemImage).tag(type)
+                }
+            }
+            .pickerStyle(.menu)
+
+            if let basis = controlSession.basisScan {
+                LabeledContent("Grundlage", value: basis.timestamp.formatted(
+                    date: .abbreviated, time: .shortened))
+                if controlSession.isAnalyzingBasis {
+                    HStack { ProgressView(); Text("Analysiere…").foregroundStyle(.secondary) }
+                } else if controlSession.hasSuggestions {
+                    DisclosureGroup(
+                        "Erkannte Anforderungen (\(controlSession.requirementSuggestions.count))"
+                    ) {
+                        ForEach(controlSession.requirementSuggestions) { s in
+                            RequirementSuggestionRow(suggestion: s)
+                        }
+                    }
+                } else {
+                    Label("Keine kennzeichnungsrelevanten Angaben erkannt.",
+                          systemImage: "info.circle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Button(role: .destructive) {
+                    controlSession.resetBasis()
+                } label: {
+                    Label("Grundlage entfernen", systemImage: "xmark.circle")
+                        .font(.caption)
+                }
+            } else {
+                NavigationLink {
+                    ScanHistoryPickerView(
+                        service: scanHistory,
+                        title: "Grundlage auswählen"
+                    ) { entry in
+                        LabelingScanEntryPreview(
+                            entry: entry,
+                            image: scanHistory.thumbnail(for: entry)
+                        )
+                        .onAppear {
+                            controlSession.setBasisScan(entry)
+                        }
+                    }
+                } label: {
+                    Label("Grundlage aus Scan-Historie laden",
+                          systemImage: "doc.text.magnifyingglass")
+                }
+            }
+        } header: {
+            Text("Kontrollgrundlage")
+        } footer: {
+            Text("Optional: Partieprotokoll, Rezeptur oder Analysebericht scannen, um die Verpackungsangaben automatisch abzugleichen.")
+                .font(.caption2)
+        }
+    }
+
+    // MARK: - Abgleich
+
+    @ViewBuilder
+    private var controlComparisonSection: some View {
+        if let comparison = controlSession.comparisonResult {
+            Section {
+                // Summary row
+                HStack(spacing: 12) {
+                    Image(systemName: comparison.hasIssues
+                          ? "exclamationmark.triangle.fill" : "checkmark.shield.fill")
+                        .foregroundStyle(comparison.hasIssues ? .orange : .green)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(comparison.hasIssues ? "Abweichungen gefunden" : "Kein Auffälligkeit")
+                            .fontWeight(.semibold)
+                        Text([
+                            comparison.matchedCount > 0 ? "\(comparison.matchedCount) ✅" : nil,
+                            comparison.mismatchCount > 0 ? "\(comparison.mismatchCount) ⚠️" : nil,
+                            comparison.missingCount > 0 ? "\(comparison.missingCount) ❌" : nil,
+                            comparison.notCheckableCount > 0 ? "\(comparison.notCheckableCount) 🔍" : nil,
+                        ].compactMap { $0 }.joined(separator: "  "))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 4)
+
+                ForEach(comparison.entries) { entry in
+                    ComparisonEntryRow(entry: entry)
+                }
+            } header: {
+                Text("Abgleich Grundlage ↔ Verpackung")
+            } footer: {
+                Text("Automatischer Abgleich auf Basis erkannter OCR-Daten. Kein Ersatz für eine amtliche Kontrolle.")
+                    .font(.caption2)
+            }
+        }
+    }
+
     private var historySection: some View {
         Section("Scan-Historie") {
             NavigationLink {
@@ -345,7 +454,7 @@ struct LabelingCheckView: View {
             additives: additiveStore.additives
         )
 
-        checkResult = LabelingCheckService.check(
+        let result = LabelingCheckService.check(
             ocrText: mergedText,
             feedType: feedType,
             feedTypeConfidence: feedConfidence,
@@ -355,7 +464,16 @@ struct LabelingCheckView: View {
             imageItems: entry.imageItems,
             additiveDeclarations: declarations
         )
+        checkResult = result
         isResultPresented = true
+
+        // Automatically run comparison when a basis scan is loaded
+        if controlSession.hasBasis {
+            controlSession.runComparison(
+                packagingCheckResult: result,
+                packagingOCRText: mergedText
+            )
+        }
     }
 
     private func overallColor(_ status: LabelingOverallStatus) -> Color {
@@ -407,5 +525,101 @@ private struct LabelingScanEntryPreview: View {
             }
         }
         .navigationTitle("Scan geladen")
+    }
+}
+
+// MARK: - Requirement Suggestion Row
+
+private struct RequirementSuggestionRow: View {
+    let suggestion: LabelingRequirementSuggestion
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: statusIcon)
+                .foregroundStyle(statusColor)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 4) {
+                    Text(suggestion.category.displayName)
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                    if let nv = suggestion.normalizedValue, !nv.displayString.isEmpty {
+                        Text("– \(nv.displayString)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Text(suggestion.extractedText)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private var statusIcon: String {
+        switch suggestion.status {
+        case .mustDeclare:      return "checkmark.circle"
+        case .shouldReview:     return "questionmark.circle"
+        case .notLabelRelevant: return "minus.circle"
+        case .unclear:          return "exclamationmark.circle"
+        }
+    }
+
+    private var statusColor: Color {
+        switch suggestion.status {
+        case .mustDeclare:      return .blue
+        case .shouldReview:     return .orange
+        case .notLabelRelevant: return .secondary
+        case .unclear:          return .orange
+        }
+    }
+}
+
+// MARK: - Comparison Entry Row
+
+private struct ComparisonEntryRow: View {
+    let entry: ComparisonEntry
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: entry.packagingStatus.icon)
+                .foregroundStyle(statusColor)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.suggestion.category.displayName)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                if let pkgText = entry.packagingText {
+                    Text(pkgText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                if let note = entry.note {
+                    Text(note)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+            }
+            Spacer()
+            Text(entry.packagingStatus.displayName)
+                .font(.caption2)
+                .foregroundStyle(statusColor)
+        }
+        .padding(.vertical, 2)
+    }
+
+    private var statusColor: Color {
+        switch entry.packagingStatus {
+        case .matched:            return .green
+        case .missingOnPackaging: return .red
+        case .mismatch:           return .orange
+        case .notCheckable:       return .gray
+        case .unclear:            return .orange
+        case .notRequired:        return .secondary
+        }
     }
 }
