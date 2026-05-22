@@ -5,6 +5,7 @@ protocol LabelingRuleRepository {
     func loadFeedTypes(from url: URL) throws -> [LabelingFeedType]
     func loadRules(from url: URL, forFeedType feedTypeId: String) throws -> [LabelingRule]
     func loadDatabaseInfo(from url: URL) throws -> LabelingDatabaseInfo
+    func loadFeedMaterials(from url: URL) throws -> [FeedMaterial]
 }
 
 struct SQLiteLabelingRuleRepository: LabelingRuleRepository {
@@ -86,6 +87,42 @@ struct SQLiteLabelingRuleRepository: LabelingRuleRepository {
                 patterns: patterns[id] ?? []
             )
         }
+    }
+
+    func loadFeedMaterials(from url: URL) throws -> [FeedMaterial] {
+        let db = try openReadonly(url)
+        defer { sqlite3_close(db) }
+
+        // Graceful fallback: table may not exist in older DB versions
+        guard table("feed_materials", hasColumn: "catalog_number", db: db) else { return [] }
+
+        let sql = """
+        SELECT catalog_number, chapter, chapter_name_de, name_de,
+               COALESCE(description_de, ''), COALESCE(mandatory_declarations_de, ''),
+               COALESCE(restrictions_de, ''), COALESCE(regulation, '68/2013')
+        FROM feed_materials
+        ORDER BY catalog_number
+        """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw LabelingRepositoryError.queryFailed(errorMessage(db))
+        }
+        defer { sqlite3_finalize(stmt) }
+
+        var result: [FeedMaterial] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            result.append(FeedMaterial(
+                catalogNumber: text(stmt, 0) ?? "",
+                chapter: Int(sqlite3_column_int(stmt, 1)),
+                chapterNameDe: text(stmt, 2) ?? "",
+                nameDe: text(stmt, 3) ?? "",
+                descriptionDe: text(stmt, 4) ?? "",
+                mandatoryDeclarationsDe: text(stmt, 5) ?? "",
+                restrictionsDe: text(stmt, 6) ?? "",
+                regulation: text(stmt, 7) ?? "68/2013"
+            ))
+        }
+        return result
     }
 
     func loadDatabaseInfo(from url: URL) throws -> LabelingDatabaseInfo {

@@ -16,6 +16,11 @@ struct LabelingCheckView: View {
     @State private var checkError: String?
     @State private var isResultPresented = false
 
+    // Einzelfuttermittelkatalog-Suche
+    @State private var catalogSearchText = ""
+    @State private var catalogSearchResults: [FeedMaterial] = []
+    @State private var selectedCatalogEntry: FeedMaterial?
+
     /// Combined control session (basis document + comparison). Lives entirely
     /// in this view — no new storage path, no new OCR workflow.
     @StateObject private var controlSession = LabelingControlSession()
@@ -30,6 +35,7 @@ struct LabelingCheckView: View {
                 feedTypeSection
                 actionSection
                 controlComparisonSection
+                feedMaterialCatalogSection
                 labelingStatusBanner
             }
             .navigationTitle("Kennzeichnung")
@@ -354,6 +360,79 @@ struct LabelingCheckView: View {
         }
     }
 
+    // MARK: - Einzelfuttermittelkatalog
+
+    @ViewBuilder
+    private var feedMaterialCatalogSection: some View {
+        Section {
+            HStack {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                TextField("Bezeichnung oder Katalognummer", text: $catalogSearchText)
+                    .autocorrectionDisabled()
+                    .onChange(of: catalogSearchText) { _, q in
+                        selectedCatalogEntry = nil
+                        catalogSearchResults = FeedMaterialLookupService.search(
+                            query: q,
+                            in: labelingStore.feedMaterials,
+                            maxResults: 25
+                        )
+                    }
+                if !catalogSearchText.isEmpty {
+                    Button {
+                        catalogSearchText = ""
+                        catalogSearchResults = []
+                        selectedCatalogEntry = nil
+                    } label: {
+                        Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            if !catalogSearchResults.isEmpty, selectedCatalogEntry == nil {
+                ForEach(catalogSearchResults.prefix(10)) { material in
+                    Button {
+                        selectedCatalogEntry = material
+                        catalogSearchText = material.nameDe
+                        catalogSearchResults = []
+                    } label: {
+                        HStack {
+                            Text(material.catalogNumber)
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                                .frame(width: 52, alignment: .leading)
+                            Text(material.nameDe)
+                                .font(.subheadline)
+                                .foregroundStyle(.primary)
+                            Spacer()
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+                if catalogSearchResults.count > 10 {
+                    Text("… und \(catalogSearchResults.count - 10) weitere Treffer")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if let entry = selectedCatalogEntry {
+                FeedMaterialDetailRow(material: entry)
+            }
+        } header: {
+            Text("Einzelfuttermittelkatalog (VO (EU) Nr. 68/2013)")
+        } footer: {
+            if labelingStore.feedMaterials.isEmpty {
+                Text("Katalogdaten werden geladen…")
+                    .font(.caption2)
+            } else {
+                Text("\(labelingStore.feedMaterials.count) Einträge · Kapitel 1–12")
+                    .font(.caption2)
+            }
+        }
+    }
+
     // MARK: - Logic
 
     private var activeFeedType: LabelingFeedType? {
@@ -602,5 +681,65 @@ private struct ComparisonEntryRow: View {
         case .unclear:            return .orange
         case .notRequired:        return .secondary
         }
+    }
+}
+
+// MARK: - Feed Material Detail Row
+
+private struct FeedMaterialDetailRow: View {
+    let material: FeedMaterial
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(material.nameDe)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                    Text("Katalognummer \(material.catalogNumber)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text("Kap. \(material.chapter)")
+                    .font(.caption2)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.secondary.opacity(0.15))
+                    .clipShape(Capsule())
+            }
+
+            if !material.descriptionDe.isEmpty {
+                Text(material.descriptionDe)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !material.mandatoryDeclarationList.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Pflichtangaben:")
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.secondary)
+                    ForEach(material.mandatoryDeclarationList, id: \.self) { decl in
+                        Label(decl, systemImage: "checkmark.circle")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            if !material.restrictionsDe.isEmpty {
+                Label(material.restrictionsDe, systemImage: "exclamationmark.circle")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+            }
+
+            Text("Kapitel: \(material.chapterNameDe)")
+                .font(.caption2)
+                .foregroundStyle(Color.secondary.opacity(0.7))
+                .padding(.top, 2)
+        }
+        .padding(.vertical, 4)
     }
 }

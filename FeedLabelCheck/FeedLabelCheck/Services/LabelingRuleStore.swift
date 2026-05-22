@@ -4,6 +4,7 @@ import Foundation
 @MainActor
 final class LabelingRuleStore: ObservableObject {
     @Published private(set) var feedTypes: [LabelingFeedType] = []
+    @Published private(set) var feedMaterials: [FeedMaterial] = []
     @Published private(set) var isLoaded = false
     @Published private(set) var loadError: String?
     @Published private(set) var dbInfo: LabelingDatabaseInfo?
@@ -45,6 +46,7 @@ final class LabelingRuleStore: ObservableObject {
 
         do {
             feedTypes = try repository.loadFeedTypes(from: url)
+            feedMaterials = try repository.loadFeedMaterials(from: url)
             dbInfo = try repository.loadDatabaseInfo(from: url)
             loadError = nil
             isLoaded = true
@@ -120,6 +122,7 @@ final class LabelingRuleStore: ObservableObject {
             try FileManager.default.moveItem(at: downloaded, to: localDatabaseURL)
 
             feedTypes = try repository.loadFeedTypes(from: localDatabaseURL)
+            feedMaterials = try repository.loadFeedMaterials(from: localDatabaseURL)
             dbInfo = try repository.loadDatabaseInfo(from: localDatabaseURL)
             defaults.set(manifest.sha256, forKey: shaKey)
             updateAvailable = false
