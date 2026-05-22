@@ -1,0 +1,562 @@
+import XCTest
+@testable import FeedLabelCheck
+
+// MARK: - A) Grundlage-Auswertung
+
+final class LabelingRequirementSuggestionServiceTests: XCTestCase {
+
+    // Helper to run analysis and find the first suggestion matching category + status
+    private func firstSuggestion(
+        in text: String,
+        category: LabelingRequirementCategory,
+        status: LabelingRequirementStatus
+    ) -> LabelingRequirementSuggestion? {
+        LabelingRequirementSuggestionService.analyze(ocrText: text)
+            .first { $0.category == category && $0.status == status }
+    }
+
+    // MARK: Analytical constituents → mustDeclare
+
+    func testRohproteinMustDeclare() {
+        let text = "Rohprotein 12,5 %  Rohfett 8,0 %"
+        let s = firstSuggestion(in: text, category: .analyticalConstituents, status: .mustDeclare)
+        XCTAssertNotNil(s, "Rohprotein 12,5 % must produce a mustDeclare suggestion")
+        XCTAssertEqual(s?.normalizedValue?.numericValue ?? -1.0, 12.5, accuracy: 0.001)
+        XCTAssertEqual(s?.normalizedValue?.unit, "%")
+    }
+
+    func testRohfettMustDeclare() {
+        let text = "Rohfett 8,0 % Rohasche 2,5 %"
+        let suggestions = LabelingRequirementSuggestionService.analyze(ocrText: text)
+        let categories = suggestions.filter { $0.status == .mustDeclare }.map { $0.category }
+        XCTAssertTrue(
+            categories.contains(.analyticalConstituents),
+            "Rohfett/Rohasche must produce analyticalConstituents mustDeclare"
+        )
+    }
+
+    func testCrudeProteinMustDeclare() {
+        let text = "crude protein 18.0 %"
+        let s = firstSuggestion(in: text, category: .analyticalConstituents, status: .mustDeclare)
+        XCTAssertNotNil(s, "English 'crude protein 18.0 %' must produce a mustDeclare suggestion")
+        XCTAssertEqual(s?.normalizedValue?.numericValue ?? 0, 18.0, accuracy: 0.001)
+    }
+
+    // MARK: Additives → mustDeclare
+
+    func testTaurinMgKgMustDeclare() {
+        let text = "Zusatzstoffe: Taurin 1000 mg/kg"
+        let s = firstSuggestion(in: text, category: .additives, status: .mustDeclare)
+        XCTAssertNotNil(s, "Taurin 1000 mg/kg must produce a mustDeclare additives suggestion")
+        XCTAssertEqual(s?.normalizedValue?.numericValue ?? -1.0, 1000.0, accuracy: 0.001)
+        XCTAssertEqual(s?.normalizedValue?.unit, "mg/kg")
+    }
+
+    func testTaurinWithThousandsSeparatorMustDeclare() {
+        let text = "Taurin 1.000 mg/kg"
+        let s = firstSuggestion(in: text, category: .additives, status: .mustDeclare)
+        XCTAssertNotNil(s)
+        XCTAssertEqual(s?.normalizedValue?.numericValue ?? -1.0, 1000.0, accuracy: 0.001)
+    }
+
+    func testVitaminD3IEKgMustDeclare() {
+        let text = "Vitamin D3 200 IE/kg"
+        let s = firstSuggestion(in: text, category: .additives, status: .mustDeclare)
+        XCTAssertNotNil(s, "Vitamin D3 200 IE/kg must produce a mustDeclare additives suggestion")
+        XCTAssertEqual(s?.normalizedValue?.numericValue ?? -1.0, 200.0, accuracy: 0.001)
+        XCTAssertEqual(s?.normalizedValue?.unit, "IE/kg")
+    }
+
+    // MARK: Composition → mustDeclare
+
+    func testCompositionWithPercentsMustDeclare() {
+        let text = "Huhn 70 %, Brühe 28 %, Mineralstoffe 1 %, Pflanzenöl 1 %"
+        let s = firstSuggestion(in: text, category: .composition, status: .mustDeclare)
+        XCTAssertNotNil(s, "Composition with ≥2 ingredients must produce a mustDeclare suggestion")
+    }
+
+    func testSingleIngredientNoCompositionSuggestion() {
+        // Only one ingredient → composition suggestion is suppressed
+        let text = "Huhn 70 %"
+        let suggestions = LabelingRequirementSuggestionService.analyze(ocrText: text)
+        let comp = suggestions.filter {
+            $0.category == .composition && $0.status == .mustDeclare
+        }
+        XCTAssertTrue(comp.isEmpty, "Single ingredient must not produce a composition suggestion")
+    }
+
+    // MARK: Charge / LOT → mustDeclare
+
+    func testChargeWithCodeMustDeclare() {
+        let text = "Charge A12345 Rohprotein 25 %"
+        let s = firstSuggestion(in: text, category: .lotNumber, status: .mustDeclare)
+        XCTAssertNotNil(s, "Charge A12345 must produce a mustDeclare lotNumber suggestion")
+    }
+
+    func testLotCodeMustDeclare() {
+        let text = "LOT 20240901A"
+        let s = firstSuggestion(in: text, category: .lotNumber, status: .mustDeclare)
+        XCTAssertNotNil(s, "LOT 20240901A must produce a mustDeclare lotNumber suggestion")
+    }
+
+    // MARK: MHD / EXP → mustDeclare
+
+    func testMHDWithDateMustDeclare() {
+        let text = "MHD 31.12.2025"
+        let s = firstSuggestion(in: text, category: .bestBefore, status: .mustDeclare)
+        XCTAssertNotNil(s, "MHD 31.12.2025 must produce a mustDeclare bestBefore suggestion")
+    }
+
+    func testEXPWithDateMustDeclare() {
+        let text = "EXP: 29.11.2026 NU250529H"
+        let s = firstSuggestion(in: text, category: .bestBefore, status: .mustDeclare)
+        XCTAssertNotNil(s, "EXP: 29.11.2026 must produce a mustDeclare bestBefore suggestion")
+    }
+
+    // MARK: Not-label-relevant
+
+    func testInterneFreigabeNotLabelRelevant() {
+        let text = "interne Freigabe QC-Protokoll Charge A100"
+        let s = firstSuggestion(in: text, category: .internalProductionInfo, status: .notLabelRelevant)
+        XCTAssertNotNil(s, "'interne Freigabe' must produce a notLabelRelevant suggestion")
+    }
+
+    func testProduktionslinieNotLabelRelevant() {
+        let text = "Produktionslinie 4 Chargennummer B100"
+        let s = firstSuggestion(in: text, category: .internalProductionInfo, status: .notLabelRelevant)
+        XCTAssertNotNil(s, "'Produktionslinie 4' must produce a notLabelRelevant suggestion")
+    }
+
+    func testQCNumberNotLabelRelevant() {
+        let text = "QC-17 interne Kontrollnummer"
+        let s = firstSuggestion(in: text, category: .internalProductionInfo, status: .notLabelRelevant)
+        XCTAssertNotNil(s, "'QC-17' must produce a notLabelRelevant suggestion")
+    }
+
+    // MARK: shouldReview (Rezeptur-ID)
+
+    func testRezepturIdShouldReview() {
+        let text = "Rezeptur-ID R0042 Rohprotein 18 %"
+        let s = firstSuggestion(in: text, category: .lotNumber, status: .shouldReview)
+        XCTAssertNotNil(s, "Rezeptur-ID must produce a shouldReview (not mustDeclare) lotNumber suggestion")
+    }
+
+    func testRezepturIdNotAutomaticallyLot() {
+        let text = "Rezeptur-ID R0042"
+        let suggestions = LabelingRequirementSuggestionService.analyze(ocrText: text)
+        let mustDeclareLot = suggestions.filter {
+            $0.category == .lotNumber && $0.status == .mustDeclare
+        }
+        XCTAssertTrue(
+            mustDeclareLot.isEmpty,
+            "Rezeptur-ID must NOT produce a mustDeclare LOT suggestion"
+        )
+    }
+
+    // MARK: Analytical constituents not misclassified as additives
+
+    func testRohproteinNotClassifiedAsAdditive() {
+        let text = "Rohprotein 18 %"
+        let suggestions = LabelingRequirementSuggestionService.analyze(ocrText: text)
+        let additiveSuggestions = suggestions.filter { $0.category == .additives }
+        XCTAssertTrue(additiveSuggestions.isEmpty,
+                      "Rohprotein must not be classified as an additive")
+    }
+}
+
+// MARK: - B) Regression: existing packaging check still green
+
+final class LabelingControlRegressionTests: XCTestCase {
+
+    private func makeDummyFeedType() -> LabelingFeedType {
+        LabelingFeedType(
+            id: "complementary_feed",
+            nameDe: "Ergänzungsfuttermittel",
+            descriptionDe: nil,
+            keywordsDe: ["Ergänzungsfuttermittel"]
+        )
+    }
+
+    private func makeDummyRule(
+        id: String,
+        requirementType: String,
+        patterns: [LabelingRulePattern] = []
+    ) -> LabelingRule {
+        LabelingRule(
+            id: id,
+            regulationId: "reg_767_2009",
+            feedTypeId: "all",
+            titleDe: id,
+            descriptionDe: "",
+            legalBasis: "",
+            requirementType: requirementType,
+            severity: .critical,
+            isMandatory: true,
+            displayOrder: 0,
+            patterns: patterns
+        )
+    }
+
+    func testExistingCheckServiceUnchanged() {
+        // Verify LabelingCheckService.check still works without modification
+        let text = "Ergänzungsfuttermittel für Hunde. Zusammensetzung: Fleisch. Rohprotein 28 %."
+        let result = LabelingCheckService.check(
+            ocrText: text,
+            feedType: makeDummyFeedType(),
+            feedTypeConfidence: 0.9,
+            rules: [],
+            dbInfo: nil
+        )
+        XCTAssertEqual(result.ruleResults.count, 0)
+        XCTAssertEqual(result.overallStatus, .nichtPruefbar)
+    }
+
+    func testScanEntryBackwardCompatibilityUnchanged() throws {
+        // ScanEntry must still decode legacy JSON (no new required fields)
+        let json = """
+        {
+          "id": "22222222-2222-2222-2222-222222222222",
+          "timestamp": 0,
+          "ocrText": "Ergänzungsfuttermittel für Hunde",
+          "isPinned": false
+        }
+        """
+        let data = try XCTUnwrap(json.data(using: .utf8))
+        let entry = try JSONDecoder().decode(ScanEntry.self, from: data)
+        XCTAssertEqual(entry.ocrText, "Ergänzungsfuttermittel für Hunde")
+        XCTAssertNil(entry.analysisResult, "Legacy entry must decode with nil analysisResult")
+    }
+}
+
+// MARK: - C) Abgleich (comparison)
+
+final class LabelingControlComparisonServiceTests: XCTestCase {
+
+    // MARK: - Value normalization
+
+    func testValuesMatchExact() {
+        XCTAssertTrue(LabelingControlComparisonService.valuesMatch(1000.0, 1000.0))
+    }
+
+    func testValuesMatchWithinOnePct() {
+        // 1000 vs 1005 → 0.5% difference → match
+        XCTAssertTrue(LabelingControlComparisonService.valuesMatch(1000.0, 1005.0))
+    }
+
+    func testValuesMismatchBeyondOnePct() {
+        // 12.5 vs 10.0 → 20% difference → mismatch
+        XCTAssertFalse(LabelingControlComparisonService.valuesMatch(12.5, 10.0))
+    }
+
+    func testValuesMatchDecimalVariants() {
+        // 12.5 % (basis) vs 12.50 % (packaging) → same value
+        XCTAssertTrue(LabelingControlComparisonService.valuesMatch(12.5, 12.50))
+    }
+
+    // MARK: - Taurin 1000 mg/kg vs Taurin 1.000 mg/kg → matched
+
+    func testTaurinThousandsSeparatorMatched() {
+        let suggestion = LabelingRequirementSuggestion(
+            category: .additives,
+            status: .mustDeclare,
+            extractedText: "Taurin 1000 mg/kg",
+            normalizedValue: LabelingNormalizedValue(
+                numericValue: 1000.0, unit: "mg/kg", textValue: "Taurin 1000 mg/kg"
+            )
+        )
+        let packagingText = "Zusatzstoffe: Taurin 1.000 mg/kg, Vitamin E 150 mg/kg"
+        let entry = LabelingControlComparisonService.compare(
+            suggestion: suggestion,
+            checkResult: makeDummyCheckResult(),
+            packagingText: packagingText
+        )
+        XCTAssertEqual(
+            entry.packagingStatus, .matched,
+            "Taurin 1000 mg/kg (basis) vs Taurin 1.000 mg/kg (packaging) must be matched"
+        )
+    }
+
+    // MARK: - Rohprotein 12,5 % vs Rohprotein 12.50 % → matched
+
+    func testRohproteinDecimalVariantsMatched() {
+        let suggestion = LabelingRequirementSuggestion(
+            category: .analyticalConstituents,
+            status: .mustDeclare,
+            extractedText: "Rohprotein 12,5 %",
+            normalizedValue: LabelingNormalizedValue(
+                numericValue: 12.5, unit: "%", textValue: "Rohprotein 12,5 %"
+            )
+        )
+        let packagingText = "Rohprotein 12.50 % Rohfett 8,0 %"
+        let entry = LabelingControlComparisonService.compare(
+            suggestion: suggestion,
+            checkResult: makeDummyCheckResult(),
+            packagingText: packagingText
+        )
+        XCTAssertEqual(
+            entry.packagingStatus, .matched,
+            "Rohprotein 12,5% (basis) vs Rohprotein 12.50% (packaging) must be matched"
+        )
+    }
+
+    // MARK: - Rohprotein 12,5 % vs Rohprotein 10,0 % → mismatch
+
+    func testRohproteinValueMismatch() {
+        let suggestion = LabelingRequirementSuggestion(
+            category: .analyticalConstituents,
+            status: .mustDeclare,
+            extractedText: "Rohprotein 12,5 %",
+            normalizedValue: LabelingNormalizedValue(
+                numericValue: 12.5, unit: "%", textValue: "Rohprotein 12,5 %"
+            )
+        )
+        let packagingText = "Rohprotein 10,0 % Rohfett 8,0 %"
+        let entry = LabelingControlComparisonService.compare(
+            suggestion: suggestion,
+            checkResult: makeDummyCheckResult(),
+            packagingText: packagingText
+        )
+        XCTAssertEqual(
+            entry.packagingStatus, .mismatch,
+            "Rohprotein 12,5 % (basis) vs Rohprotein 10,0 % (packaging) must be mismatch"
+        )
+    }
+
+    // MARK: - Charge A12345 vs LOT A12345 → matched
+
+    func testChargeLOTAliasMatched() {
+        let suggestion = LabelingRequirementSuggestion(
+            category: .lotNumber,
+            status: .mustDeclare,
+            extractedText: "Charge A12345",
+            normalizedValue: LabelingNormalizedValue(
+                numericValue: nil, unit: nil, textValue: "Charge A12345"
+            )
+        )
+        let packagingText = "LOT A12345 MHD 12.2026"
+        let entry = LabelingControlComparisonService.compare(
+            suggestion: suggestion,
+            checkResult: makeCheckResultWithLot(status: .found, matchedText: "LOT A12345"),
+            packagingText: packagingText
+        )
+        XCTAssertEqual(
+            entry.packagingStatus, .matched,
+            "Charge A12345 (basis) with LOT A12345 found on packaging must be matched"
+        )
+    }
+
+    // MARK: - Charge A12345 missing, no Boden image → notCheckable
+
+    func testChargeA12345MissingNoBoden() {
+        let suggestion = LabelingRequirementSuggestion(
+            category: .lotNumber,
+            status: .mustDeclare,
+            extractedText: "Charge A12345",
+            normalizedValue: LabelingNormalizedValue(
+                numericValue: nil, unit: nil, textValue: "Charge A12345"
+            )
+        )
+        let entry = LabelingControlComparisonService.compare(
+            suggestion: suggestion,
+            checkResult: makeCheckResultWithLot(status: .missing, matchedText: nil, hasBodenImage: false),
+            packagingText: "Zusammensetzung: Fleisch Rohprotein 28 %"
+        )
+        XCTAssertEqual(
+            entry.packagingStatus, .notCheckable,
+            "Missing LOT without Boden image must be notCheckable"
+        )
+    }
+
+    // MARK: - interne Freigabe QC-17 → notRequired
+
+    func testInterneFreigabeNotRequired() {
+        let suggestion = LabelingRequirementSuggestion(
+            category: .internalProductionInfo,
+            status: .notLabelRelevant,
+            extractedText: "interne Freigabe QC-17"
+        )
+        let entry = LabelingControlComparisonService.compare(
+            suggestion: suggestion,
+            checkResult: makeDummyCheckResult(),
+            packagingText: "Zusammensetzung: Fleisch"
+        )
+        XCTAssertEqual(
+            entry.packagingStatus, .notRequired,
+            "interne Freigabe must produce notRequired comparison status"
+        )
+    }
+
+    // MARK: - Substance name extraction
+
+    func testExtractSubstanceNameTaurin() {
+        let name = LabelingControlComparisonService.extractSubstanceName(from: "Taurin 1000 mg/kg")
+        XCTAssertEqual(name, "Taurin")
+    }
+
+    func testExtractSubstanceNameVitaminD3() {
+        let name = LabelingControlComparisonService.extractSubstanceName(from: "Vitamin D3 200 IE/kg")
+        XCTAssertEqual(name, "Vitamin D3")
+    }
+
+    func testExtractLotCode() {
+        let code = LabelingControlComparisonService.extractLotCode(from: "Charge A12345")
+        XCTAssertEqual(code, "A12345")
+    }
+
+    func testExtractLotCodeNil() {
+        // Keyword without code
+        let code = LabelingControlComparisonService.extractLotCode(from: "Charge: s. Boden")
+        XCTAssertNil(code)
+    }
+
+    // MARK: - EN↔DE substance synonym
+
+    func testTaurineTaurinSynonym() {
+        XCTAssertTrue(
+            LabelingControlComparisonService.textContainsSubstance("Taurine", in: "Taurin 1.000 mg/kg"),
+            "Taurine must match Taurin (EN→DE)"
+        )
+        XCTAssertTrue(
+            LabelingControlComparisonService.textContainsSubstance("Taurin", in: "Taurine 1000 mg/kg"),
+            "Taurin must match Taurine (DE→EN)"
+        )
+    }
+
+    // MARK: - Numeric value extraction
+
+    func testExtractNumericValueTaurin() {
+        let text = "Taurin 1.000 mg/kg"
+        let v = LabelingControlComparisonService.extractNumericValue(
+            forKeyword: "Taurin", unit: "mg/kg", in: text
+        )
+        XCTAssertNotNil(v)
+        XCTAssertEqual(v!, 1000.0, accuracy: 0.001)
+    }
+
+    func testExtractNumericValueRohprotein() {
+        let text = "Rohprotein 12,5 %"
+        let v = LabelingControlComparisonService.extractNumericValue(
+            forKeyword: "Rohprotein", unit: "%", in: text
+        )
+        XCTAssertNotNil(v)
+        XCTAssertEqual(v!, 12.5, accuracy: 0.001)
+    }
+
+    // MARK: - D) Regression: no new OCR workflow / no duplicate storage
+
+    func testLabelingCheckResultStructureUnchanged() {
+        // LabelingCheckResult must still be constructable with the original API
+        let feedType = LabelingFeedType(
+            id: "pet_feed", nameDe: "Heimtierfutter", descriptionDe: nil, keywordsDe: []
+        )
+        let result = LabelingCheckResult(
+            feedType: feedType,
+            feedTypeConfidence: 0.9,
+            ruleResults: [],
+            overallStatus: .nichtPruefbar,
+            checkedAt: Date(),
+            dbVersion: "1.0",
+            databaseInfo: nil,
+            ocrText: "test",
+            imageItems: nil,
+            additiveDeclarations: nil
+        )
+        XCTAssertEqual(result.feedType.id, "pet_feed")
+        XCTAssertNil(result.additiveDeclarations)
+    }
+
+    func testScanEntryStructureUnchanged() throws {
+        // ScanEntry must encode/decode without new required fields
+        let entry = ScanEntry(
+            ocrText: "Ergänzungsfuttermittel für Katzen",
+            thumbnailFileName: nil
+        )
+        let encoded = try JSONEncoder().encode(entry)
+        let decoded = try JSONDecoder().decode(ScanEntry.self, from: encoded)
+        XCTAssertEqual(decoded.ocrText, "Ergänzungsfuttermittel für Katzen")
+    }
+
+    // MARK: - Helpers
+
+    private func makeDummyCheckResult() -> LabelingCheckResult {
+        let feedType = LabelingFeedType(
+            id: "complementary_feed",
+            nameDe: "Ergänzungsfuttermittel",
+            descriptionDe: nil,
+            keywordsDe: []
+        )
+        return LabelingCheckResult(
+            feedType: feedType,
+            feedTypeConfidence: 0.9,
+            ruleResults: [],
+            overallStatus: .nichtPruefbar,
+            checkedAt: Date(),
+            dbVersion: "test",
+            databaseInfo: nil,
+            ocrText: "",
+            imageItems: nil,
+            additiveDeclarations: nil
+        )
+    }
+
+    private func makeCheckResultWithLot(
+        status: RuleCheckStatus,
+        matchedText: String?,
+        hasBodenImage: Bool = true
+    ) -> LabelingCheckResult {
+        let lotPattern = LabelingRulePattern(
+            id: "p1", ruleId: "art15_004",
+            patternType: "keyword", patternValue: "LOT",
+            patternLanguage: "de", confidenceWeight: 0.7,
+            isNegativePattern: false
+        )
+        let lotRule = LabelingRule(
+            id: "art15_004",
+            regulationId: "reg_767_2009",
+            feedTypeId: "all",
+            titleDe: "Partie-/Losnummer",
+            descriptionDe: "",
+            legalBasis: "",
+            requirementType: "lot_number",
+            severity: .critical,
+            isMandatory: true,
+            displayOrder: 40,
+            patterns: [lotPattern]
+        )
+        let lotResult = RuleCheckResult(
+            rule: lotRule,
+            status: status,
+            matchedText: matchedText,
+            matchedLanguage: "de",
+            confidence: status == .found ? 1.0 : 0.7,
+            note: nil
+        )
+        let feedType = LabelingFeedType(
+            id: "complementary_feed",
+            nameDe: "Ergänzungsfuttermittel",
+            descriptionDe: nil,
+            keywordsDe: []
+        )
+        // hasBodenImage=false → only Vorderseite; hasBodenImage=true → include Boden
+        let items: [OCRImageItem]? = hasBodenImage
+            ? [
+                OCRImageItem(id: UUID(), imageType: .vorderseite, thumbnailFileName: nil, ocrText: "test"),
+                OCRImageItem(id: UUID(), imageType: .boden, thumbnailFileName: nil, ocrText: "LOT A12345"),
+            ]
+            : [
+                OCRImageItem(id: UUID(), imageType: .vorderseite, thumbnailFileName: nil, ocrText: "test"),
+            ]
+        return LabelingCheckResult(
+            feedType: feedType,
+            feedTypeConfidence: 0.9,
+            ruleResults: [lotResult],
+            overallStatus: .nichtPruefbar,
+            checkedAt: Date(),
+            dbVersion: "test",
+            databaseInfo: nil,
+            ocrText: "",
+            imageItems: items,
+            additiveDeclarations: nil
+        )
+    }
+}

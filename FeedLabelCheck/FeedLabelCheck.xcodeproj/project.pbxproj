@@ -47,6 +47,10 @@
 		9A000001000000000000007C /* Models/ScanAnalysisResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A000001000000000000007E /* Models/ScanAnalysisResult.swift */; };
 		9A000001000000000000007D /* Services/ScanAnalysisService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A000001000000000000007F /* Services/ScanAnalysisService.swift */; };
 		9A0000010000000000000082 /* Services/StorageMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000083 /* Services/StorageMigration.swift */; };
+		9A0000010000000000000084 /* Models/LabelingControlSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000085 /* Models/LabelingControlSession.swift */; };
+		9A0000010000000000000086 /* Services/LabelingRequirementSuggestionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000087 /* Services/LabelingRequirementSuggestionService.swift */; };
+		9A0000010000000000000088 /* Services/LabelingControlComparisonService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000089 /* Services/LabelingControlComparisonService.swift */; };
+		9A000001000000000000008A /* LabelingControlTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A000001000000000000008B /* LabelingControlTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -102,6 +106,10 @@
 		9A000001000000000000007E /* Models/ScanAnalysisResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models/ScanAnalysisResult.swift; sourceTree = "<group>"; };
 		9A000001000000000000007F /* Services/ScanAnalysisService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/ScanAnalysisService.swift; sourceTree = "<group>"; };
 		9A0000010000000000000083 /* Services/StorageMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/StorageMigration.swift; sourceTree = "<group>"; };
+		9A0000010000000000000085 /* Models/LabelingControlSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models/LabelingControlSession.swift; sourceTree = "<group>"; };
+		9A0000010000000000000087 /* Services/LabelingRequirementSuggestionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/LabelingRequirementSuggestionService.swift; sourceTree = "<group>"; };
+		9A0000010000000000000089 /* Services/LabelingControlComparisonService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/LabelingControlComparisonService.swift; sourceTree = "<group>"; };
+		9A000001000000000000008B /* LabelingControlTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabelingControlTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -136,6 +144,7 @@
 			children = (
 				9A0000010000000000000064 /* ScanHistoryCleanupTests.swift */,
 				9A0000010000000000000081 /* ScanArchitectureTests.swift */,
+				9A000001000000000000008B /* LabelingControlTests.swift */,
 			);
 			path = FeedLabelCheckTests;
 			sourceTree = "<group>";
@@ -181,6 +190,9 @@
 				9A000001000000000000007E /* Models/ScanAnalysisResult.swift */,
 				9A000001000000000000007F /* Services/ScanAnalysisService.swift */,
 				9A0000010000000000000083 /* Services/StorageMigration.swift */,
+				9A0000010000000000000085 /* Models/LabelingControlSession.swift */,
+				9A0000010000000000000087 /* Services/LabelingRequirementSuggestionService.swift */,
+				9A0000010000000000000089 /* Services/LabelingControlComparisonService.swift */,
 			);
 			path = FeedLabelCheck;
 			sourceTree = "<group>";
@@ -332,6 +344,9 @@
 				9A000001000000000000007C /* Models/ScanAnalysisResult.swift in Sources */,
 				9A000001000000000000007D /* Services/ScanAnalysisService.swift in Sources */,
 				9A0000010000000000000082 /* Services/StorageMigration.swift in Sources */,
+				9A0000010000000000000084 /* Models/LabelingControlSession.swift in Sources */,
+				9A0000010000000000000086 /* Services/LabelingRequirementSuggestionService.swift in Sources */,
+				9A0000010000000000000088 /* Services/LabelingControlComparisonService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -341,6 +356,7 @@
 			files = (
 				9A0000010000000000000063 /* ScanHistoryCleanupTests.swift in Sources */,
 				9A0000010000000000000080 /* ScanArchitectureTests.swift in Sources */,
+				9A000001000000000000008A /* LabelingControlTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

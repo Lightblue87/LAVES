@@ -497,20 +497,40 @@ def _build_patterns() -> list[tuple]:
     rows += _kw("art15_004", [
         "Charge:", "Los:", "Partie:", "Chargennr", "Losnr", "Partienr",
         "Chargenangabe:", "Kennnummer der Partie", "Losnummer:", "Chargennummer:",
+        # Additional real-world variants (proCani, generic EU labels)
+        "Zulassungsnummer der Partie",
+        "Partienummer",
+        "Partie-Nr.",
+        "Partie Nr.",
+        "Losnummer",   # without colon — complements existing "Losnummer:"
+        "Los-Nr.",
+        "LOT",         # common EU label abbreviation without code requirement
     ], weight=0.7)
     rows += _kw("art15_004", [
         "Reference number", "batch number", "lot number", "Batch:", "Lot:",
+        "Batch No.",
     ], weight=0.7, language="en")
     rows += _kw("art15_004", [
         "numero di riferimento", "numero di lotto", "numéro de lot",
         "numero de lot", "referentienummer",
     ], weight=0.7, language="other")
-    # Regex: keyword + concrete alphanumeric code containing at least one digit → found (1.0)
-    # \b after keyword prevents matching inside compound words (e.g. "Chargenangabe")
-    # \d requirement prevents matching "Partie: siehe Boden-Aufdruck"
+    # Regex (weight 1.0, de):
+    # Pattern 000: short keyword + compact code with at least one digit → found
+    #   (?!\w) prevents matching inside compound words (e.g. "Chargenangabe")
+    #   \d requirement prevents matching "Partie: siehe Boden-Aufdruck"
+    # Pattern 001: long-form labels with space-separated code → found
+    #   Covers "Zulassungsnummer der Partie: BAF 1015090925"
+    #   Requires at least 4 digits to distinguish from "siehe Boden-Aufdruck" (no digits)
     rows += _rx("art15_004", [
         r"\b(LOT|L|Charge|Chargen-Nr\.?|Los|Partie)(?!\w)\s?[:\-]?\s?[A-Z0-9\-\/]*\d[A-Z0-9\-\/]*\b",
+        r"\b(?:Zulassungsnummer|Kennnummer)\s+der\s+Partie\s*[:\-]?\s*"
+        r"[A-Z]{1,5}\s*\d{4,}[A-Z0-9]*\b",
     ])
+    # Regex 3: EXP + date + trailing alphanumeric code heuristic → probablyFound (0.7)
+    # Covers "EXP: 29.11.2026 NU250529H" — the code after the date is likely a batch number
+    rows += _rx("art15_004", [
+        r"\bEXP\s*:?\s*\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{2,4}\s+[A-Z]{1,4}\d{4,}[A-Z0-9]*\b",
+    ], weight=0.7, language="en")
 
     # art15_005 – Feuchtegehalt
     # Keywords: section labels → probablyFound (0.7); regex with value → found (1.0)
@@ -598,8 +618,11 @@ def _build_patterns() -> list[tuple]:
     _mhd_kw_en = [
         "best before",
         "use before",
+        "use by",
         "expiry date",
         "expiration date",
+        "EXP:",   # "EXP:" (with colon) is specific enough as keyword
+        "BBE",    # Best Before End — common on UK/EU products
     ]
     _mhd_kw_other = [
         "da consumarsi preferibilmente entro",
@@ -609,7 +632,14 @@ def _build_patterns() -> list[tuple]:
         "najlepiej spożyć przed",
     ]
     _mhd_rx = [
-        r"\b(MHD|BBD|mindestens haltbar bis)[:\s]*\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{2,4}\b",
+        # German / general: standard abbreviations + concrete date (DD.MM.YYYY etc.)
+        # Includes "haltbar bis" (without "mindestens") for e.g. "-18°C haltbar bis: 09.12.26"
+        r"\b(MHD|BBD|mindestens haltbar bis|haltbar bis|verwendbar bis)"
+        r"[:\s]*\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{2,4}\b",
+        # English / international: EXP / BBE + concrete date
+        # Covers "EXP: 29.11.2026" and "BBE 01.03.2027" on multilingual EU labels
+        r"\b(EXP|BBE|best before|use before|use by|expiry|expiration)"
+        r"[:\s.]*\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{2,4}\b",
     ]
     # Keywords: section labels → probablyFound (0.7); date regex → found (1.0)
     rows += _kw("art16_002", _mhd_kw, weight=0.7)
@@ -888,7 +918,7 @@ def build(out_path: Path) -> int:
 
     # --- labeling_metadata (initial, without sha256) ---
     metadata_initial = [
-        ("labeling_db_version", "2026-05-21"),
+        ("labeling_db_version", "2026-05-22"),
         ("labeling_source_regulation", "VO (EG) Nr. 767/2009"),
         ("labeling_source_celex", "02009R0767-20181226"),
         ("labeling_source_version_date", "2018-12-26"),
