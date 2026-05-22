@@ -197,7 +197,11 @@ struct LabelingDownloadService {
         guard digest == expectedSHA256.lowercased() else {
             throw DataDownloadError.invalidChecksum
         }
-        return url
+
+        let verifiedURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(UUID().uuidString)-\(databaseURL.lastPathComponent)")
+        try data.write(to: verifiedURL, options: .atomic)
+        return verifiedURL
     }
 
     func rawURL(fileName: String) -> URL {

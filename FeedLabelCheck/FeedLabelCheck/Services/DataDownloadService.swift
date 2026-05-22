@@ -63,7 +63,10 @@ struct DataDownloadService {
             throw DataDownloadError.invalidChecksum
         }
 
-        return downloadedURL
+        let verifiedURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(UUID().uuidString)-\(databaseURL.lastPathComponent)")
+        try data.write(to: verifiedURL, options: .atomic)
+        return verifiedURL
     }
 
     func rawURL(fileName: String) -> URL {
