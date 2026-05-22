@@ -1,7 +1,7 @@
-"""Tests for the LAVES labeling check pipeline.
+"""Tests for the FeedLabelCheck labeling check pipeline.
 
 The session-scoped ``fresh_db`` fixture (conftest.py) builds a fresh
-laves_labeling.sqlite from scripts/build_labeling_db.py into a temporary
+labeling.sqlite from scripts/build_labeling_db.py into a temporary
 directory before any test runs.  DB-dependent classes receive the connection
 via ``@pytest.fixture(autouse=True) def _db(self, fresh_db)``.
 

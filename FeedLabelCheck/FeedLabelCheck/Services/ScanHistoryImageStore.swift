@@ -13,7 +13,7 @@ final class ScanHistoryImageStore {
     }
 
     func store(thumbnail: UIImage, settings: ScanHistorySettings) -> String? {
-        let storedImage = settings.storeThumbnailsOnly ? thumbnail.lavesResized(maxDimension: 900) : thumbnail
+        let storedImage = settings.storeThumbnailsOnly ? thumbnail.thumbnailResized(maxDimension: 900) : thumbnail
         let compression: CGFloat = settings.compressImages ? 0.62 : 0.86
         guard let data = storedImage.jpegData(compressionQuality: compression) else { return nil }
 
@@ -101,7 +101,7 @@ final class ScanHistoryImageStore {
 }
 
 private extension UIImage {
-    func lavesResized(maxDimension: CGFloat) -> UIImage {
+    func thumbnailResized(maxDimension: CGFloat) -> UIImage {
         let longest = max(size.width, size.height)
         guard longest > maxDimension else { return self }
 

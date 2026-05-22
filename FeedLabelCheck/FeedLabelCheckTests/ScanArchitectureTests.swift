@@ -1,5 +1,5 @@
 import XCTest
-@testable import LAVESiOS
+@testable import FeedLabelCheck
 
 /// Tests for the Phase G scan architecture:
 /// - `ScanAnalysisService` area detection, additive hints, coverage, quality warnings

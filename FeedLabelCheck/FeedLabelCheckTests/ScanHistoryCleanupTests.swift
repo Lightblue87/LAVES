@@ -1,6 +1,6 @@
 import XCTest
 import UIKit
-@testable import LAVESiOS
+@testable import FeedLabelCheck
 
 final class ScanHistoryCleanupPolicyTests: XCTestCase {
     func testAgeLimitRemovesOldUnpinnedEntries() {

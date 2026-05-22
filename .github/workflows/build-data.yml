@@ -1,4 +1,4 @@
-name: Build LAVES Data
+name: Build FeedLabelCheck Data
 
 on:
   workflow_dispatch:
@@ -30,45 +30,45 @@ jobs:
         run: python Data/bvl_update_pipeline.py
 
       - name: Build SQLite database
-        run: python scripts/build_sqlite_db.py --json Data/zusatzstoffe.json --out dist/laves.sqlite
+        run: python scripts/build_sqlite_db.py --json Data/zusatzstoffe.json --out dist/feedlabelcheck.sqlite
 
       - name: Build labeling rules database
-        run: python scripts/build_labeling_db.py --out dist/laves_labeling.sqlite
+        run: python scripts/build_labeling_db.py --out dist/labeling.sqlite
 
       - name: Build data manifest
-        run: python scripts/build_data_manifest.py --json Data/zusatzstoffe.json --sqlite dist/laves.sqlite --labeling-sqlite dist/laves_labeling.sqlite --out dist/manifest.json
+        run: python scripts/build_data_manifest.py --json Data/zusatzstoffe.json --sqlite dist/feedlabelcheck.sqlite --labeling-sqlite dist/labeling.sqlite --out dist/manifest.json
 
       - name: Upload data artifacts
         uses: actions/upload-artifact@v6
         with:
-          name: laves-data
+          name: feedlabelcheck-data
           path: |
             Data/zusatzstoffe.json
-            dist/laves.sqlite
-            dist/laves_labeling.sqlite
+            dist/feedlabelcheck.sqlite
+            dist/labeling.sqlite
             dist/manifest.json
           retention-days: 30
 
       - name: Checkout public data repository
         uses: actions/checkout@v6
         with:
-          repository: Lightblue87/LAVES-Data
-          token: ${{ secrets.LAVES_DATA_REPO_TOKEN }}
+          repository: Lightblue87/FeedLabelCheck-Data
+          token: ${{ secrets.FEEDLABELCHECK_DATA_REPO_TOKEN }}
           path: public-data
 
       - name: Publish SQLite databases
         run: |
-          cp dist/laves.sqlite public-data/laves.sqlite
-          cp dist/laves_labeling.sqlite public-data/laves_labeling.sqlite
+          cp dist/feedlabelcheck.sqlite public-data/feedlabelcheck.sqlite
+          cp dist/labeling.sqlite public-data/labeling.sqlite
           cp Data/zusatzstoffe.json public-data/zusatzstoffe.json
           cp dist/manifest.json public-data/manifest.json
           cd public-data
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add laves.sqlite laves_labeling.sqlite zusatzstoffe.json manifest.json
+          git add feedlabelcheck.sqlite labeling.sqlite zusatzstoffe.json manifest.json
           if git diff --cached --quiet; then
             echo "No data changes to publish."
           else
-            git commit -m "Update generated LAVES data (incl. labeling rules)"
+            git commit -m "Update generated FeedLabelCheck data (incl. labeling rules)"
             git push
           fi

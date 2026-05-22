@@ -24,8 +24,8 @@ struct DataManifest: Decodable {
 }
 
 struct DataDownloadService {
-    private let manifestURL = URL(string: "https://raw.githubusercontent.com/Lightblue87/LAVES-Data/main/manifest.json")!
-    private let databaseURL = URL(string: "https://raw.githubusercontent.com/Lightblue87/LAVES-Data/main/laves.sqlite")!
+    private let manifestURL = URL(string: "https://raw.githubusercontent.com/Lightblue87/FeedLabelCheck-Data/main/manifest.json")!
+    private let databaseURL = URL(string: "https://raw.githubusercontent.com/Lightblue87/FeedLabelCheck-Data/main/feedlabelcheck.sqlite")!
 
     func fetchManifest() async throws -> DataManifest {
         let (data, response) = try await URLSession.shared.data(from: manifestURL)

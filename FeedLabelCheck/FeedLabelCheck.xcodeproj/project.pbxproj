@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		9A0000010000000000000001 /* LAVESiOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000011 /* LAVESiOSApp.swift */; };
+		9A0000010000000000000001 /* FeedLabelCheckApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000011 /* FeedLabelCheckApp.swift */; };
 		9A0000010000000000000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000012 /* ContentView.swift */; };
 		9A0000010000000000000003 /* Models/Additive.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000013 /* Models/Additive.swift */; };
 		9A0000010000000000000004 /* Services/AdditiveStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000014 /* Services/AdditiveStore.swift */; };
@@ -29,7 +29,7 @@
 		9A000001000000000000004B /* Services/LabelingRuleStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000053 /* Services/LabelingRuleStore.swift */; };
 		9A000001000000000000004C /* Views/LabelingCheckView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000054 /* Views/LabelingCheckView.swift */; };
 		9A000001000000000000004D /* Views/LabelingResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000055 /* Views/LabelingResultView.swift */; };
-		9A000001000000000000004E /* Resources/laves_labeling.sqlite in Resources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000056 /* Resources/laves_labeling.sqlite */; };
+		9A000001000000000000004E /* Resources/labeling.sqlite in Resources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000056 /* Resources/labeling.sqlite */; };
 		9A0000010000000000000057 /* Services/ScanHistorySettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A000001000000000000005D /* Services/ScanHistorySettings.swift */; };
 		9A0000010000000000000058 /* Services/ScanHistoryStorageStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A000001000000000000005E /* Services/ScanHistoryStorageStats.swift */; };
 		9A0000010000000000000059 /* Services/ScanHistoryCleanupPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A000001000000000000005F /* Services/ScanHistoryCleanupPolicy.swift */; };
@@ -46,6 +46,7 @@
 		9A0000010000000000000079 /* Services/AdditiveDeclarationParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A000001000000000000007B /* Services/AdditiveDeclarationParser.swift */; };
 		9A000001000000000000007C /* Models/ScanAnalysisResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A000001000000000000007E /* Models/ScanAnalysisResult.swift */; };
 		9A000001000000000000007D /* Services/ScanAnalysisService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A000001000000000000007F /* Services/ScanAnalysisService.swift */; };
+		9A0000010000000000000082 /* Services/StorageMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000083 /* Services/StorageMigration.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -54,14 +55,14 @@
 			containerPortal = 9A0000010000000000000027 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = 9A0000010000000000000023;
-			remoteInfo = LAVESiOS;
+			remoteInfo = FeedLabelCheck;
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		9A0000010000000000000009 /* LAVESiOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LAVESiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		9A0000010000000000000065 /* LAVESiOSTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = LAVESiOSTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		9A0000010000000000000011 /* LAVESiOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LAVESiOSApp.swift; sourceTree = "<group>"; };
+		9A0000010000000000000009 /* FeedLabelCheck.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FeedLabelCheck.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		9A0000010000000000000065 /* FeedLabelCheckTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = FeedLabelCheckTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		9A0000010000000000000011 /* FeedLabelCheckApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedLabelCheckApp.swift; sourceTree = "<group>"; };
 		9A0000010000000000000012 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		9A0000010000000000000013 /* Models/Additive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models/Additive.swift; sourceTree = "<group>"; };
 		9A0000010000000000000014 /* Services/AdditiveStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/AdditiveStore.swift; sourceTree = "<group>"; };
@@ -83,7 +84,7 @@
 		9A0000010000000000000053 /* Services/LabelingRuleStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/LabelingRuleStore.swift; sourceTree = "<group>"; };
 		9A0000010000000000000054 /* Views/LabelingCheckView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/LabelingCheckView.swift; sourceTree = "<group>"; };
 		9A0000010000000000000055 /* Views/LabelingResultView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views/LabelingResultView.swift; sourceTree = "<group>"; };
-		9A0000010000000000000056 /* Resources/laves_labeling.sqlite */ = {isa = PBXFileReference; lastKnownFileType = file; path = Resources/laves_labeling.sqlite; sourceTree = "<group>"; };
+		9A0000010000000000000056 /* Resources/labeling.sqlite */ = {isa = PBXFileReference; lastKnownFileType = file; path = Resources/labeling.sqlite; sourceTree = "<group>"; };
 		9A000001000000000000005D /* Services/ScanHistorySettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/ScanHistorySettings.swift; sourceTree = "<group>"; };
 		9A000001000000000000005E /* Services/ScanHistoryStorageStats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/ScanHistoryStorageStats.swift; sourceTree = "<group>"; };
 		9A000001000000000000005F /* Services/ScanHistoryCleanupPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/ScanHistoryCleanupPolicy.swift; sourceTree = "<group>"; };
@@ -100,6 +101,7 @@
 		9A000001000000000000007B /* Services/AdditiveDeclarationParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/AdditiveDeclarationParser.swift; sourceTree = "<group>"; };
 		9A000001000000000000007E /* Models/ScanAnalysisResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models/ScanAnalysisResult.swift; sourceTree = "<group>"; };
 		9A000001000000000000007F /* Services/ScanAnalysisService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/ScanAnalysisService.swift; sourceTree = "<group>"; };
+		9A0000010000000000000083 /* Services/StorageMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/StorageMigration.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -123,25 +125,25 @@
 		9A0000010000000000000020 = {
 			isa = PBXGroup;
 			children = (
-				9A0000010000000000000021 /* LAVESiOS */,
-				9A000001000000000000006F /* LAVESiOSTests */,
+				9A0000010000000000000021 /* FeedLabelCheck */,
+				9A000001000000000000006F /* FeedLabelCheckTests */,
 				9A0000010000000000000022 /* Products */,
 			);
 			sourceTree = "<group>";
 		};
-		9A000001000000000000006F /* LAVESiOSTests */ = {
+		9A000001000000000000006F /* FeedLabelCheckTests */ = {
 			isa = PBXGroup;
 			children = (
 				9A0000010000000000000064 /* ScanHistoryCleanupTests.swift */,
 				9A0000010000000000000081 /* ScanArchitectureTests.swift */,
 			);
-			path = LAVESiOSTests;
+			path = FeedLabelCheckTests;
 			sourceTree = "<group>";
 		};
-		9A0000010000000000000021 /* LAVESiOS */ = {
+		9A0000010000000000000021 /* FeedLabelCheck */ = {
 			isa = PBXGroup;
 			children = (
-				9A0000010000000000000011 /* LAVESiOSApp.swift */,
+				9A0000010000000000000011 /* FeedLabelCheckApp.swift */,
 				9A0000010000000000000012 /* ContentView.swift */,
 				9A0000010000000000000013 /* Models/Additive.swift */,
 				9A0000010000000000000014 /* Services/AdditiveStore.swift */,
@@ -155,7 +157,7 @@
 				9A0000010000000000000044 /* Views/IngredientScanView.swift */,
 				9A0000010000000000000040 /* Views/SearchableSelectionField.swift */,
 				9A0000010000000000000018 /* Resources/zusatzstoffe.json */,
-				9A0000010000000000000056 /* Resources/laves_labeling.sqlite */,
+				9A0000010000000000000056 /* Resources/labeling.sqlite */,
 				9A0000010000000000000046 /* Assets.xcassets */,
 				9A000001000000000000004F /* Models/LabelingRule.swift */,
 				9A0000010000000000000050 /* Services/SQLiteLabelingRuleRepository.swift */,
@@ -178,15 +180,16 @@
 				9A000001000000000000007B /* Services/AdditiveDeclarationParser.swift */,
 				9A000001000000000000007E /* Models/ScanAnalysisResult.swift */,
 				9A000001000000000000007F /* Services/ScanAnalysisService.swift */,
+				9A0000010000000000000083 /* Services/StorageMigration.swift */,
 			);
-			path = LAVESiOS;
+			path = FeedLabelCheck;
 			sourceTree = "<group>";
 		};
 		9A0000010000000000000022 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				9A0000010000000000000009 /* LAVESiOS.app */,
-				9A0000010000000000000065 /* LAVESiOSTests.xctest */,
+				9A0000010000000000000009 /* FeedLabelCheck.app */,
+				9A0000010000000000000065 /* FeedLabelCheckTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -194,9 +197,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		9A0000010000000000000023 /* LAVESiOS */ = {
+		9A0000010000000000000023 /* FeedLabelCheck */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 9A0000010000000000000024 /* Build configuration list for PBXNativeTarget "LAVESiOS" */;
+			buildConfigurationList = 9A0000010000000000000024 /* Build configuration list for PBXNativeTarget "FeedLabelCheck" */;
 			buildPhases = (
 				9A0000010000000000000025 /* Sources */,
 				9A0000010000000000000019 /* Frameworks */,
@@ -206,14 +209,14 @@
 			);
 			dependencies = (
 			);
-			name = LAVESiOS;
-			productName = LAVESiOS;
-			productReference = 9A0000010000000000000009 /* LAVESiOS.app */;
+			name = FeedLabelCheck;
+			productName = FeedLabelCheck;
+			productReference = 9A0000010000000000000009 /* FeedLabelCheck.app */;
 			productType = "com.apple.product-type.application";
 		};
-		9A0000010000000000000069 /* LAVESiOSTests */ = {
+		9A0000010000000000000069 /* FeedLabelCheckTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 9A000001000000000000006C /* Build configuration list for PBXNativeTarget "LAVESiOSTests" */;
+			buildConfigurationList = 9A000001000000000000006C /* Build configuration list for PBXNativeTarget "FeedLabelCheckTests" */;
 			buildPhases = (
 				9A0000010000000000000066 /* Sources */,
 				9A0000010000000000000067 /* Frameworks */,
@@ -224,9 +227,9 @@
 			dependencies = (
 				9A000001000000000000006D /* PBXTargetDependency */,
 			);
-			name = LAVESiOSTests;
-			productName = LAVESiOSTests;
-			productReference = 9A0000010000000000000065 /* LAVESiOSTests.xctest */;
+			name = FeedLabelCheckTests;
+			productName = FeedLabelCheckTests;
+			productReference = 9A0000010000000000000065 /* FeedLabelCheckTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
@@ -248,7 +251,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 9A0000010000000000000028 /* Build configuration list for PBXProject "LAVESiOS" */;
+			buildConfigurationList = 9A0000010000000000000028 /* Build configuration list for PBXProject "FeedLabelCheck" */;
 			compatibilityVersion = "Xcode 16.0";
 			developmentRegion = de;
 			hasScannedForEncodings = 0;
@@ -263,8 +266,8 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				9A0000010000000000000023 /* LAVESiOS */,
-				9A0000010000000000000069 /* LAVESiOSTests */,
+				9A0000010000000000000023 /* FeedLabelCheck */,
+				9A0000010000000000000069 /* FeedLabelCheckTests */,
 			);
 		};
 /* End PBXProject section */
@@ -275,7 +278,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				9A0000010000000000000008 /* Resources/zusatzstoffe.json in Resources */,
-				9A000001000000000000004E /* Resources/laves_labeling.sqlite in Resources */,
+				9A000001000000000000004E /* Resources/labeling.sqlite in Resources */,
 				9A0000010000000000000045 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -294,7 +297,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				9A0000010000000000000001 /* LAVESiOSApp.swift in Sources */,
+				9A0000010000000000000001 /* FeedLabelCheckApp.swift in Sources */,
 				9A0000010000000000000002 /* ContentView.swift in Sources */,
 				9A0000010000000000000003 /* Models/Additive.swift in Sources */,
 				9A0000010000000000000004 /* Services/AdditiveStore.swift in Sources */,
@@ -328,6 +331,7 @@
 				9A0000010000000000000079 /* Services/AdditiveDeclarationParser.swift in Sources */,
 				9A000001000000000000007C /* Models/ScanAnalysisResult.swift in Sources */,
 				9A000001000000000000007D /* Services/ScanAnalysisService.swift in Sources */,
+				9A0000010000000000000082 /* Services/StorageMigration.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -345,7 +349,7 @@
 /* Begin PBXTargetDependency section */
 		9A000001000000000000006D /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 9A0000010000000000000023 /* LAVESiOS */;
+			target = 9A0000010000000000000023 /* FeedLabelCheck */;
 			targetProxy = 9A000001000000000000006E /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
@@ -476,10 +480,10 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = JENQ6BW7HF;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = LAVES;
+				INFOPLIST_KEY_CFBundleDisplayName = "FeedLabel Check";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.medical";
-				INFOPLIST_KEY_NSCameraUsageDescription = "LAVES nutzt die Kamera, um Inhaltsstofflisten auf Etiketten zu lesen.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "LAVES nutzt ausgewählte Bilder, um Inhaltsstofflisten auf Etiketten zu lesen.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "FeedLabel Check nutzt die Kamera, um Inhaltsstofflisten auf Etiketten zu lesen.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "FeedLabel Check nutzt ausgewählte Bilder, um Inhaltsstofflisten auf Etiketten zu lesen.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -492,7 +496,7 @@
 				);
 				MARKETING_VERSION = 0.1.0;
 				OTHER_LDFLAGS = "-lsqlite3";
-				PRODUCT_BUNDLE_IDENTIFIER = de.lightblue87.laves;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lightblue.feedlabelcheck;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -508,10 +512,10 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = JENQ6BW7HF;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = LAVES;
+				INFOPLIST_KEY_CFBundleDisplayName = "FeedLabel Check";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.medical";
-				INFOPLIST_KEY_NSCameraUsageDescription = "LAVES nutzt die Kamera, um Inhaltsstofflisten auf Etiketten zu lesen.";
-				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "LAVES nutzt ausgewählte Bilder, um Inhaltsstofflisten auf Etiketten zu lesen.";
+				INFOPLIST_KEY_NSCameraUsageDescription = "FeedLabel Check nutzt die Kamera, um Inhaltsstofflisten auf Etiketten zu lesen.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "FeedLabel Check nutzt ausgewählte Bilder, um Inhaltsstofflisten auf Etiketten zu lesen.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -524,7 +528,7 @@
 				);
 				MARKETING_VERSION = 0.1.0;
 				OTHER_LDFLAGS = "-lsqlite3";
-				PRODUCT_BUNDLE_IDENTIFIER = de.lightblue87.laves;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lightblue.feedlabelcheck;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
@@ -546,11 +550,11 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = de.lightblue87.laves.tests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lightblue.feedlabelcheck.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LAVESiOS.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/LAVESiOS";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/FeedLabelCheck.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/FeedLabelCheck";
 				WRAPPER_EXTENSION = xctest;
 			};
 			name = Debug;
@@ -569,11 +573,11 @@
 					"@executable_path/Frameworks",
 					"@loader_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = de.lightblue87.laves.tests;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lightblue.feedlabelcheck.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LAVESiOS.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/LAVESiOS";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/FeedLabelCheck.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/FeedLabelCheck";
 				WRAPPER_EXTENSION = xctest;
 			};
 			name = Release;
@@ -581,7 +585,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		9A0000010000000000000024 /* Build configuration list for PBXNativeTarget "LAVESiOS" */ = {
+		9A0000010000000000000024 /* Build configuration list for PBXNativeTarget "FeedLabelCheck" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				9A0000010000000000000031 /* Debug */,
@@ -590,7 +594,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		9A0000010000000000000028 /* Build configuration list for PBXProject "LAVESiOS" */ = {
+		9A0000010000000000000028 /* Build configuration list for PBXProject "FeedLabelCheck" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				9A0000010000000000000029 /* Debug */,
@@ -599,7 +603,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		9A000001000000000000006C /* Build configuration list for PBXNativeTarget "LAVESiOSTests" */ = {
+		9A000001000000000000006C /* Build configuration list for PBXNativeTarget "FeedLabelCheckTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				9A000001000000000000006A /* Debug */,

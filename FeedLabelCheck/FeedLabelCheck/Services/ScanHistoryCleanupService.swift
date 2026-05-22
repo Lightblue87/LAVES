@@ -26,8 +26,9 @@ final class ScanHistoryService: ObservableObject {
     private let imageStore: ScanHistoryImageStore
 
     init(baseURL: URL? = nil) {
-        let base = baseURL ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("LAVES")
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        StorageMigration.migrateIfNeeded(base: appSupport)
+        let base = baseURL ?? appSupport.appendingPathComponent("FeedLabelCheck")
         historyURL = base.appendingPathComponent("scan_history.json")
         settingsURL = base.appendingPathComponent("scan_history_settings.json")
         imageStore = ScanHistoryImageStore(thumbnailDir: base.appendingPathComponent("thumbnails"))

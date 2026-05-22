@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the LAVES labeling rules SQLite database from VO (EG) Nr. 767/2009."""
+"""Build the FeedLabelCheck labeling rules SQLite database from VO (EG) Nr. 767/2009."""
 
 from __future__ import annotations
 
@@ -929,9 +929,9 @@ def build(out_path: Path) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Build the LAVES labeling rules SQLite database."
+        description="Build the FeedLabelCheck labeling rules SQLite database."
     )
-    default_out = Path(__file__).parent.parent / "dist" / "laves_labeling.sqlite"
+    default_out = Path(__file__).parent.parent / "dist" / "labeling.sqlite"
     parser.add_argument(
         "--out",
         type=Path,
