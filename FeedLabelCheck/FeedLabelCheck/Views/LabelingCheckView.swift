@@ -427,7 +427,7 @@ struct LabelingCheckView: View {
                 Text("Katalogdaten werden geladen…")
                     .font(.caption2)
             } else {
-                Text("\(labelingStore.feedMaterials.count) Einträge · Kapitel 1–12")
+                Text("\(labelingStore.feedMaterials.count) Einträge · Kapitel 1–13")
                     .font(.caption2)
             }
         }
