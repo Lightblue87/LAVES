@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  actions: write   # required by upload-artifact
 
 jobs:
   build-data:
@@ -16,10 +17,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: "3.13"
 
@@ -39,7 +40,7 @@ jobs:
         run: python scripts/build_data_manifest.py --json Data/zusatzstoffe.json --sqlite dist/feedlabelcheck.sqlite --labeling-sqlite dist/labeling.sqlite --out dist/manifest.json
 
       - name: Upload data artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: feedlabelcheck-data
           path: |
@@ -49,23 +50,28 @@ jobs:
             dist/manifest.json
           retention-days: 30
 
-      - name: Validate data repository token
+      - name: Check data repository token
+        id: check-token
         env:
           DATA_REPO_TOKEN: ${{ secrets.FEEDLABELCHECK_DATA_REPO_TOKEN }}
         run: |
           if [ -z "$DATA_REPO_TOKEN" ]; then
-            echo "::error::Secret FEEDLABELCHECK_DATA_REPO_TOKEN is missing in the FeedLabelCheck repository. Add a fine-grained GitHub token with Contents: Read and write access to Lightblue87/FeedLabelCheck-Data."
-            exit 1
+            echo "::warning::Secret FEEDLABELCHECK_DATA_REPO_TOKEN not set — skipping publish to data repository."
+            echo "has_token=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_token=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Checkout public data repository
-        uses: actions/checkout@v6
+        if: steps.check-token.outputs.has_token == 'true'
+        uses: actions/checkout@v4
         with:
           repository: Lightblue87/FeedLabelCheck-Data
           token: ${{ secrets.FEEDLABELCHECK_DATA_REPO_TOKEN }}
           path: public-data
 
       - name: Publish SQLite databases
+        if: steps.check-token.outputs.has_token == 'true'
         run: |
           cp dist/feedlabelcheck.sqlite public-data/feedlabelcheck.sqlite
           cp dist/labeling.sqlite public-data/labeling.sqlite
