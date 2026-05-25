@@ -52,6 +52,7 @@
 		9A0000010000000000000088 /* Services/LabelingControlComparisonService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000089 /* Services/LabelingControlComparisonService.swift */; };
 		9A000001000000000000008A /* LabelingControlTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A000001000000000000008B /* LabelingControlTests.swift */; };
 		9A000001000000000000008C /* Models/FeedMaterial.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A000001000000000000008D /* Models/FeedMaterial.swift */; };
+		9A0000010000000000000090 /* Models/DlgFeedMaterial.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000091 /* Models/DlgFeedMaterial.swift */; };
 		9A000001000000000000008E /* Services/FeedMaterialLookupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A000001000000000000008F /* Services/FeedMaterialLookupService.swift */; };
 /* End PBXBuildFile section */
 
@@ -113,6 +114,7 @@
 		9A0000010000000000000089 /* Services/LabelingControlComparisonService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/LabelingControlComparisonService.swift; sourceTree = "<group>"; };
 		9A000001000000000000008B /* LabelingControlTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LabelingControlTests.swift; sourceTree = "<group>"; };
 		9A000001000000000000008D /* Models/FeedMaterial.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models/FeedMaterial.swift; sourceTree = "<group>"; };
+		9A0000010000000000000091 /* Models/DlgFeedMaterial.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models/DlgFeedMaterial.swift; sourceTree = "<group>"; };
 		9A000001000000000000008F /* Services/FeedMaterialLookupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/FeedMaterialLookupService.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -198,6 +200,7 @@
 				9A0000010000000000000087 /* Services/LabelingRequirementSuggestionService.swift */,
 				9A0000010000000000000089 /* Services/LabelingControlComparisonService.swift */,
 				9A000001000000000000008D /* Models/FeedMaterial.swift */,
+				9A0000010000000000000091 /* Models/DlgFeedMaterial.swift */,
 				9A000001000000000000008F /* Services/FeedMaterialLookupService.swift */,
 			);
 			path = FeedLabelCheck;
@@ -354,6 +357,7 @@
 				9A0000010000000000000086 /* Services/LabelingRequirementSuggestionService.swift in Sources */,
 				9A0000010000000000000088 /* Services/LabelingControlComparisonService.swift in Sources */,
 				9A000001000000000000008C /* Models/FeedMaterial.swift in Sources */,
+				9A0000010000000000000090 /* Models/DlgFeedMaterial.swift in Sources */,
 				9A000001000000000000008E /* Services/FeedMaterialLookupService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

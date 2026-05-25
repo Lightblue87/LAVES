@@ -96,4 +96,38 @@ struct FeedMaterialLookupService {
             .lowercased()
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
+
+    // MARK: - DLG Positivliste
+
+    /// Sucht in der DLG Positivliste nach einem freien Suchtext.
+    static func searchDlg(
+        query: String,
+        in materials: [DlgFeedMaterial],
+        maxResults: Int = 25
+    ) -> [DlgFeedMaterial] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return [] }
+        let normalized = normalize(q)
+        var results: [(DlgFeedMaterial, Int)] = []
+        for m in materials {
+            let score = dlgMatchScore(query: normalized, material: m)
+            if score > 0 { results.append((m, score)) }
+        }
+        return results.sorted { $0.1 > $1.1 }.prefix(maxResults).map(\.0)
+    }
+
+    private static func dlgMatchScore(query: String, material: DlgFeedMaterial) -> Int {
+        let name = normalize(material.nameDe)
+        let desc = normalize(material.descriptionDe)
+        let num  = material.number
+        if num == query              { return 100 }
+        if num.hasPrefix(query)      { return 90 }
+        if name == query             { return 80 }
+        if name.hasPrefix(query)     { return 70 }
+        if name.contains(query)      { return 50 }
+        let words = query.split(separator: " ").map(String.init)
+        if words.count > 1, words.allSatisfy({ name.contains($0) }) { return 40 }
+        if desc.contains(query)      { return 20 }
+        return 0
+    }
 }

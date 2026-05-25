@@ -20,6 +20,8 @@ struct LabelingCheckView: View {
     @State private var catalogSearchText = ""
     @State private var catalogSearchResults: [FeedMaterial] = []
     @State private var selectedCatalogEntry: FeedMaterial?
+    @State private var dlgSearchResults: [DlgFeedMaterial] = []
+    @State private var selectedDlgEntry: DlgFeedMaterial?
 
     /// Combined control session (basis document + comparison). Lives entirely
     /// in this view — no new storage path, no new OCR workflow.
@@ -365,6 +367,7 @@ struct LabelingCheckView: View {
     @ViewBuilder
     private var feedMaterialCatalogSection: some View {
         Section {
+            // Suchfeld
             HStack {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
@@ -372,17 +375,19 @@ struct LabelingCheckView: View {
                     .autocorrectionDisabled()
                     .onChange(of: catalogSearchText) { _, q in
                         selectedCatalogEntry = nil
+                        selectedDlgEntry = nil
                         catalogSearchResults = FeedMaterialLookupService.search(
-                            query: q,
-                            in: labelingStore.feedMaterials,
-                            maxResults: 25
-                        )
+                            query: q, in: labelingStore.feedMaterials, maxResults: 25)
+                        dlgSearchResults = FeedMaterialLookupService.searchDlg(
+                            query: q, in: labelingStore.dlgFeedMaterials, maxResults: 25)
                     }
                 if !catalogSearchText.isEmpty {
                     Button {
                         catalogSearchText = ""
                         catalogSearchResults = []
+                        dlgSearchResults = []
                         selectedCatalogEntry = nil
+                        selectedDlgEntry = nil
                     } label: {
                         Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                     }
@@ -390,44 +395,82 @@ struct LabelingCheckView: View {
                 }
             }
 
-            if !catalogSearchResults.isEmpty, selectedCatalogEntry == nil {
-                ForEach(catalogSearchResults.prefix(10)) { material in
+            // VO (EU) 68/2013 Treffer
+            if !catalogSearchResults.isEmpty, selectedCatalogEntry == nil, selectedDlgEntry == nil {
+                Text("VO (EU) Nr. 68/2013")
+                    .font(.caption).foregroundStyle(.secondary)
+                ForEach(catalogSearchResults.prefix(8)) { material in
                     Button {
                         selectedCatalogEntry = material
+                        selectedDlgEntry = nil
                         catalogSearchText = material.nameDe
                         catalogSearchResults = []
+                        dlgSearchResults = []
                     } label: {
                         HStack {
                             Text(material.catalogNumber)
                                 .font(.caption.monospacedDigit())
                                 .foregroundStyle(.secondary)
                                 .frame(width: 52, alignment: .leading)
-                            Text(material.nameDe)
-                                .font(.subheadline)
-                                .foregroundStyle(.primary)
+                            Text(material.nameDe).font(.subheadline).foregroundStyle(.primary)
                             Spacer()
                         }
                     }
                     .buttonStyle(.plain)
                 }
-                if catalogSearchResults.count > 10 {
-                    Text("… und \(catalogSearchResults.count - 10) weitere Treffer")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                if catalogSearchResults.count > 8 {
+                    Text("… und \(catalogSearchResults.count - 8) weitere").font(.caption).foregroundStyle(.secondary)
                 }
             }
 
+            // DLG Positivliste Treffer
+            if !dlgSearchResults.isEmpty, selectedCatalogEntry == nil, selectedDlgEntry == nil,
+               !labelingStore.dlgFeedMaterials.isEmpty {
+                Text("DLG Positivliste (15. Auflage 2023)")
+                    .font(.caption).foregroundStyle(.secondary)
+                ForEach(dlgSearchResults.prefix(8)) { material in
+                    Button {
+                        selectedDlgEntry = material
+                        selectedCatalogEntry = nil
+                        catalogSearchText = material.nameDe
+                        catalogSearchResults = []
+                        dlgSearchResults = []
+                    } label: {
+                        HStack {
+                            Text(material.number)
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                                .frame(width: 60, alignment: .leading)
+                            Text(material.nameDe).font(.subheadline).foregroundStyle(.primary)
+                            Spacer()
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+                if dlgSearchResults.count > 8 {
+                    Text("… und \(dlgSearchResults.count - 8) weitere").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
+            // Detail VO (EU) 68/2013
             if let entry = selectedCatalogEntry {
                 FeedMaterialDetailRow(material: entry)
             }
+
+            // Detail DLG Positivliste
+            if let entry = selectedDlgEntry {
+                DlgFeedMaterialDetailRow(material: entry)
+            }
+
         } header: {
-            Text("Einzelfuttermittelkatalog (VO (EU) Nr. 68/2013)")
+            Text("Einzelfuttermittelkatalog")
         } footer: {
             if labelingStore.feedMaterials.isEmpty {
-                Text("Katalogdaten werden geladen…")
-                    .font(.caption2)
+                Text("Katalogdaten werden geladen…").font(.caption2)
             } else {
-                Text("\(labelingStore.feedMaterials.count) Einträge · Kapitel 1–13")
+                let dlgInfo = labelingStore.dlgFeedMaterials.isEmpty
+                    ? "" : " · DLG \(labelingStore.dlgFeedMaterials.count)"
+                Text("VO 68/2013: \(labelingStore.feedMaterials.count) Einträge\(dlgInfo)")
                     .font(.caption2)
             }
         }
@@ -736,6 +779,77 @@ private struct FeedMaterialDetailRow: View {
             }
 
             Text("Kapitel: \(material.chapterNameDe)")
+                .font(.caption2)
+                .foregroundStyle(Color.secondary.opacity(0.7))
+                .padding(.top, 2)
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+private struct DlgFeedMaterialDetailRow: View {
+    let material: DlgFeedMaterial
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(material.nameDe)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                    Text("DLG Nr. \(material.number)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text("Gr. \(material.groupNum)")
+                    .font(.caption2)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.blue.opacity(0.12))
+                    .clipShape(Capsule())
+            }
+
+            if !material.descriptionDe.isEmpty {
+                Text(material.descriptionDe)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !material.differentiationDe.isEmpty {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Differenzierungsmerkmale:")
+                        .font(.caption2).fontWeight(.semibold).foregroundStyle(.secondary)
+                    Text(material.differentiationDe)
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+
+            if !material.requirementsDe.isEmpty {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Anforderungen:")
+                        .font(.caption2).fontWeight(.semibold).foregroundStyle(.secondary)
+                    Text(material.requirementsDe)
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+
+            if !material.labelingDe.isEmpty {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Kennzeichnung (Pflichtangaben):")
+                        .font(.caption2).fontWeight(.semibold).foregroundStyle(.secondary)
+                    Text(material.labelingDe)
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+
+            if !material.remarksDe.isEmpty {
+                Label(material.remarksDe, systemImage: "info.circle")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+            }
+
+            Text("\(material.groupNameDe) · DLG Positivliste \(material.edition). Auflage")
                 .font(.caption2)
                 .foregroundStyle(Color.secondary.opacity(0.7))
                 .padding(.top, 2)

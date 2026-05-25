@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,6 +17,23 @@ from pathlib import Path
 
 SCHEMA = """
 PRAGMA journal_mode = DELETE;
+
+CREATE TABLE IF NOT EXISTS dlg_feed_materials (
+    number TEXT PRIMARY KEY,          -- z.B. "01.02.01"
+    group_num INTEGER NOT NULL,       -- Gruppenziffer
+    group_name_de TEXT NOT NULL,
+    name_de TEXT NOT NULL,
+    description_de TEXT,
+    differentiation_de TEXT,          -- Differenzierungsmerkmale (in v.H.)
+    requirements_de TEXT,             -- Anforderungen (in v.H.)
+    labeling_de TEXT,                 -- Angaben zur Kennzeichnung
+    process_de TEXT,                  -- Zusätzliche Angaben zum Herstellungsprozess
+    remarks_de TEXT,                  -- Bemerkungen
+    edition TEXT NOT NULL DEFAULT '15'
+);
+
+CREATE INDEX IF NOT EXISTS idx_dlg_feed_materials_group ON dlg_feed_materials(group_num);
+CREATE INDEX IF NOT EXISTS idx_dlg_feed_materials_name ON dlg_feed_materials(name_de);
 
 CREATE TABLE IF NOT EXISTS feed_materials (
     catalog_number TEXT PRIMARY KEY,
@@ -1024,6 +1042,99 @@ _COMPOUND_FEEDS = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# DLG Positivliste für Einzelfuttermittel (15. Auflage, 2023)
+# ---------------------------------------------------------------------------
+
+DLG_PDF_URL = (
+    "https://www.dlg.org/fileadmin/downloads/Landwirtschaft/Tierhaltung/"
+    "Futtermittel/Positivliste_fuer_Einzelfuttermittel/2023/"
+    "15-Auflage-Positivliste-230530.pdf"
+)
+DLG_EDITION = "15"
+
+DLG_GROUPS: dict[int, str] = {
+    1:  "Getreidekörner, deren Erzeugnisse und Nebenerzeugnisse",
+    2:  "Ölsaaten und Ölfrüchte sowie sonstige ölliefernde Pflanzen, deren Erzeugnisse und Nebenerzeugnisse",
+    3:  "Körnerleguminosen, deren Erzeugnisse und Nebenerzeugnisse",
+    4:  "Knollen und Wurzeln, deren Erzeugnisse und Nebenerzeugnisse",
+    5:  "Nebenerzeugnisse des Gärungsgewerbes und der Destillation einschließlich der fermentativen Alkoholherstellung für Bioenergiezwecke",
+    6:  "Andere Samen und Früchte, deren Erzeugnisse und Nebenerzeugnisse",
+    7:  "Wirtschaftseigene Grobfuttermittel und Grünfutterprodukte",
+    8:  "Andere Pflanzen, deren Erzeugnisse und Nebenerzeugnisse",
+    9:  "Milcherzeugnisse",
+    10: "Fisch sowie andere Meerestiere, deren Erzeugnisse und Nebenerzeugnisse",
+    11: "Mineralstoffe",
+    12: "Verschiedene Einzelfuttermittel",
+    13: "Ehemalige Lebensmittel, Erzeugnisse und Nebenerzeugnisse der Lebensmittelherstellung",
+    14: "Proteinerzeugnisse aus Mikroorganismen",
+    17: "Ammoniumsalze",
+    18: "Andere NPN-Verbindungen (außer Ammoniumsalze)",
+    19: "Erzeugnisse und Nebenerzeugnisse von Landtieren",
+    20: "Eierzeugnisse",
+}
+
+_FOOTNOTE_RE = re.compile(r'\s*\d+\)\s*$')
+_DLG_NUM_RE  = re.compile(r'^\d{2}\.\d{2}\.\d{2}$')
+
+
+def _clean(s: str | None) -> str:
+    if not s:
+        return ""
+    return re.sub(r'\s+', ' ', s).strip()
+
+
+def parse_dlg_pdf(pdf_path: Path) -> list[tuple]:
+    """Parse DLG Positivliste PDF and return rows for dlg_feed_materials INSERT.
+
+    Returns list of 11-tuples:
+      (number, group_num, group_name_de, name_de, description_de,
+       differentiation_de, requirements_de, labeling_de, process_de,
+       remarks_de, edition)
+    Returns empty list if pdfplumber is unavailable or parsing fails.
+    """
+    try:
+        import pdfplumber  # optional dependency – not in requirements-pipeline.txt by default
+    except ImportError:
+        print("[DLG] pdfplumber not installed – skipping DLG Positivliste", flush=True)
+        return []
+
+    rows: list[tuple] = []
+    try:
+        with pdfplumber.open(str(pdf_path)) as pdf:
+            # Data starts at page 23 (0-indexed: 22)
+            for page in pdf.pages[22:]:
+                tables = page.extract_tables()
+                if not tables:
+                    continue
+                for table in tables:
+                    for row in table:
+                        if not row or len(row) < 3:
+                            continue
+                        num = _clean(row[0])
+                        if not _DLG_NUM_RE.match(num):
+                            continue
+                        name     = _FOOTNOTE_RE.sub('', _clean(row[1]))
+                        desc     = _clean(row[2])
+                        diff     = _clean(row[3]) if len(row) > 3 else ""
+                        req      = _clean(row[4]) if len(row) > 4 else ""
+                        labeling = _clean(row[5]) if len(row) > 5 else ""
+                        process  = _clean(row[6]) if len(row) > 6 else ""
+                        remarks  = _clean(row[7]) if len(row) > 7 else ""
+                        g        = int(num.split('.')[0])
+                        rows.append((
+                            num, g, DLG_GROUPS.get(g, ""),
+                            name, desc, diff, req, labeling, process, remarks,
+                            DLG_EDITION,
+                        ))
+    except Exception as exc:
+        print(f"[DLG] Parsing failed: {exc} – DLG data will be empty", flush=True)
+        return []
+
+    print(f"[DLG] Parsed {len(rows)} entries from {pdf_path.name}", flush=True)
+    return rows
+
+
 def _build_art17_rules() -> list[dict]:
     rules = []
     for feed_type_id, suffix in _COMPOUND_FEEDS:
@@ -1496,7 +1607,7 @@ def _build_examples() -> list[tuple]:
 # Main build function
 # ---------------------------------------------------------------------------
 
-def build(out_path: Path) -> int:
+def build(out_path: Path, dlg_pdf_path: Path | None = None) -> int:
     """Build the database and return the number of rules inserted."""
     if out_path.exists():
         out_path.unlink()
@@ -1595,14 +1706,31 @@ def build(out_path: Path) -> int:
         _build_feed_materials(),
     )
 
+    # --- dlg_feed_materials (DLG Positivliste) ---
+    dlg_rows = parse_dlg_pdf(dlg_pdf_path) if dlg_pdf_path and dlg_pdf_path.exists() else []
+    if dlg_rows:
+        con.executemany(
+            """
+            INSERT INTO dlg_feed_materials
+                (number, group_num, group_name_de, name_de, description_de,
+                 differentiation_de, requirements_de, labeling_de, process_de,
+                 remarks_de, edition)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            dlg_rows,
+        )
+    dlg_count = len(dlg_rows)
+
     # --- labeling_metadata (initial, without sha256) ---
     metadata_initial = [
-        ("labeling_db_version", "2026-05-22"),
+        ("labeling_db_version", "2026-05-25"),
         ("labeling_source_regulation", "VO (EG) Nr. 767/2009"),
         ("labeling_source_celex", "02009R0767-20181226"),
         ("labeling_source_version_date", "2018-12-26"),
         ("labeling_created_at", now_iso),
         ("labeling_rule_count", str(rule_count)),
+        ("dlg_positivliste_edition", DLG_EDITION),
+        ("dlg_positivliste_count", str(dlg_count)),
         ("labeling_sha256", ""),  # placeholder – updated after WAL checkpoint
     ]
     con.executemany(
@@ -1647,9 +1775,15 @@ def main() -> int:
         default=default_out,
         help=f"Output path (default: {default_out})",
     )
+    parser.add_argument(
+        "--dlg-pdf",
+        type=Path,
+        default=None,
+        help="Path to DLG Positivliste PDF (optional; skips DLG data if not provided)",
+    )
     args = parser.parse_args()
 
-    rule_count = build(args.out)
+    rule_count = build(args.out, dlg_pdf_path=args.dlg_pdf)
     print(f"Wrote {args.out}, {rule_count} rules")
     return 0
 

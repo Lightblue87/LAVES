@@ -33,8 +33,22 @@ jobs:
       - name: Build SQLite database
         run: python scripts/build_sqlite_db.py --json Data/zusatzstoffe.json --out dist/feedlabelcheck.sqlite
 
+      - name: Download DLG Positivliste PDF
+        run: |
+          mkdir -p dist
+          curl -fsSL \
+            "https://www.dlg.org/fileadmin/downloads/Landwirtschaft/Tierhaltung/Futtermittel/Positivliste_fuer_Einzelfuttermittel/2023/15-Auflage-Positivliste-230530.pdf" \
+            -o dist/dlg_positivliste.pdf \
+            && echo "DLG PDF downloaded ($(wc -c < dist/dlg_positivliste.pdf) bytes)" \
+            || echo "::warning::DLG PDF download failed – building without DLG data"
+
       - name: Build labeling rules database
-        run: python scripts/build_labeling_db.py --out dist/labeling.sqlite
+        run: |
+          if [ -f dist/dlg_positivliste.pdf ]; then
+            python scripts/build_labeling_db.py --out dist/labeling.sqlite --dlg-pdf dist/dlg_positivliste.pdf
+          else
+            python scripts/build_labeling_db.py --out dist/labeling.sqlite
+          fi
 
       - name: Build data manifest
         run: python scripts/build_data_manifest.py --json Data/zusatzstoffe.json --sqlite dist/feedlabelcheck.sqlite --labeling-sqlite dist/labeling.sqlite --out dist/manifest.json
