@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  actions: write   # required by upload-artifact
 
 jobs:
   build-data:
@@ -16,10 +17,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: "3.13"
 
@@ -32,14 +33,28 @@ jobs:
       - name: Build SQLite database
         run: python scripts/build_sqlite_db.py --json Data/zusatzstoffe.json --out dist/feedlabelcheck.sqlite
 
+      - name: Download DLG Positivliste PDF
+        run: |
+          mkdir -p dist
+          curl -fsSL \
+            "https://www.dlg.org/fileadmin/downloads/Landwirtschaft/Tierhaltung/Futtermittel/Positivliste_fuer_Einzelfuttermittel/2023/15-Auflage-Positivliste-230530.pdf" \
+            -o dist/dlg_positivliste.pdf \
+            && echo "DLG PDF downloaded ($(wc -c < dist/dlg_positivliste.pdf) bytes)" \
+            || echo "::warning::DLG PDF download failed – building without DLG data"
+
       - name: Build labeling rules database
-        run: python scripts/build_labeling_db.py --out dist/labeling.sqlite
+        run: |
+          if [ -f dist/dlg_positivliste.pdf ]; then
+            python scripts/build_labeling_db.py --out dist/labeling.sqlite --dlg-pdf dist/dlg_positivliste.pdf
+          else
+            python scripts/build_labeling_db.py --out dist/labeling.sqlite
+          fi
 
       - name: Build data manifest
         run: python scripts/build_data_manifest.py --json Data/zusatzstoffe.json --sqlite dist/feedlabelcheck.sqlite --labeling-sqlite dist/labeling.sqlite --out dist/manifest.json
 
       - name: Upload data artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v4
         with:
           name: feedlabelcheck-data
           path: |
@@ -49,23 +64,38 @@ jobs:
             dist/manifest.json
           retention-days: 30
 
+      - name: Check data repository token
+        id: check-token
+        env:
+          DATA_REPO_TOKEN: ${{ secrets.FEEDLABELCHECK_DATA_REPO_TOKEN }}
+        run: |
+          if [ -z "$DATA_REPO_TOKEN" ]; then
+            echo "::warning::Secret FEEDLABELCHECK_DATA_REPO_TOKEN not set — skipping publish to data repository."
+            echo "has_token=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_token=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout public data repository
-        uses: actions/checkout@v6
+        if: steps.check-token.outputs.has_token == 'true'
+        uses: actions/checkout@v4
         with:
           repository: Lightblue87/FeedLabelCheck-Data
           token: ${{ secrets.FEEDLABELCHECK_DATA_REPO_TOKEN }}
           path: public-data
 
       - name: Publish SQLite databases
+        if: steps.check-token.outputs.has_token == 'true'
         run: |
           cp dist/feedlabelcheck.sqlite public-data/feedlabelcheck.sqlite
           cp dist/labeling.sqlite public-data/labeling.sqlite
           cp Data/zusatzstoffe.json public-data/zusatzstoffe.json
           cp dist/manifest.json public-data/manifest.json
+          cp dist/manifest.json public-data/manifest-v2.json
           cd public-data
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add feedlabelcheck.sqlite labeling.sqlite zusatzstoffe.json manifest.json
+          git add feedlabelcheck.sqlite labeling.sqlite zusatzstoffe.json manifest.json manifest-v2.json
           if git diff --cached --quiet; then
             echo "No data changes to publish."
           else

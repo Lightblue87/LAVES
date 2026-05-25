@@ -67,7 +67,7 @@ struct ScanHistoryPickerView<Destination: View>: View {
                 Button {
                     isClearImagesPresented = true
                 } label: {
-                    Label("Nur Bilder löschen", systemImage: "photo.badge.minus")
+                    Label("Nur Bilder löschen", systemImage: "photo.slash")
                 }
                 .disabled(removableImageCount == 0)
 

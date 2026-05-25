@@ -16,6 +16,13 @@ struct LabelingCheckView: View {
     @State private var checkError: String?
     @State private var isResultPresented = false
 
+    // Einzelfuttermittelkatalog-Suche
+    @State private var catalogSearchText = ""
+    @State private var catalogSearchResults: [FeedMaterial] = []
+    @State private var selectedCatalogEntry: FeedMaterial?
+    @State private var dlgSearchResults: [DlgFeedMaterial] = []
+    @State private var selectedDlgEntry: DlgFeedMaterial?
+
     /// Combined control session (basis document + comparison). Lives entirely
     /// in this view — no new storage path, no new OCR workflow.
     @StateObject private var controlSession = LabelingControlSession()
@@ -25,18 +32,26 @@ struct LabelingCheckView: View {
     var body: some View {
         NavigationStack {
             Form {
-                databaseSection
-                controlBasisSection
                 loadedScanSection
+                controlBasisSection
                 feedTypeSection
                 actionSection
                 controlComparisonSection
-                historySection
+                feedMaterialCatalogSection
+                labelingStatusBanner
             }
             .navigationTitle("Kennzeichnung")
             .toolbar {
-                if let dbInfo = labelingStore.dbInfo {
-                    ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    if labelingStore.updateAvailable, !labelingStore.isUpdating {
+                        Button {
+                            Task { await labelingStore.updateFromRemote() }
+                        } label: {
+                            Image(systemName: "arrow.down.circle.fill")
+                                .foregroundStyle(.blue)
+                        }
+                    }
+                    if let dbInfo = labelingStore.dbInfo {
                         Text("v\(dbInfo.version)")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
@@ -69,95 +84,93 @@ struct LabelingCheckView: View {
 
     // MARK: - Sections
 
-    private var databaseSection: some View {
-        Section("Regeldatenbank") {
-            if let dbInfo = labelingStore.dbInfo {
-                LabeledContent("Quelle", value: dbInfo.regulation)
-                LabeledContent("Regelversion", value: dbInfo.version)
-                LabeledContent("Datenstand", value: formattedDataDate(dbInfo.createdAt))
-                LabeledContent("Regeln", value: "\(dbInfo.totalRuleCount)")
-            } else if let error = labelingStore.loadError {
-                Text(error).font(.caption).foregroundStyle(.red)
-            } else {
-                HStack {
-                    ProgressView()
-                    Text("Regeldatenbank wird geladen…").foregroundStyle(.secondary)
-                }
-            }
-
-            if labelingStore.isUpdating {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(labelingStore.updateDetail ?? "Wird aktualisiert")
-                        .font(.caption).foregroundStyle(.secondary)
-                    if let p = labelingStore.updateProgress { ProgressView(value: p) }
-                    else { ProgressView() }
-                }
-            } else {
-                Button {
-                    Task { await labelingStore.updateFromRemote() }
-                } label: {
-                    Label(
-                        labelingStore.updateAvailable ? "Regeldatenbank aktualisieren" : "Regeldaten prüfen",
-                        systemImage: "arrow.down.circle"
-                    )
-                }
-            }
-        }
-    }
-
     @ViewBuilder
     private var loadedScanSection: some View {
-        Section {
+        Section("Aktueller Scan") {
             if let entry = selectedScanEntry {
-                LabeledContent("Scan",
-                               value: entry.timestamp.formatted(date: .abbreviated, time: .shortened))
-                LabeledContent("Bilder", value: "\(entry.imageCount)")
-
-                if let result = entry.analysisResult {
-                    let areas = result.labelingAreas.detectedNames
-                    if !areas.isEmpty {
-                        LabeledContent("Erkannte Bereiche", value: areas.joined(separator: ", "))
-                    }
-                    if !result.detectedSpeciesHints.isEmpty {
-                        LabeledContent("Tierart",
-                                       value: result.detectedSpeciesHints.joined(separator: ", "))
-                    }
-                    ForEach(result.qualityWarnings, id: \.self) { warning in
-                        Label(warning, systemImage: "exclamationmark.triangle")
-                            .font(.caption).foregroundStyle(.orange)
+                NavigationLink {
+                    LabelingScanEntryPreview(
+                        entry: entry,
+                        image: scanHistory.thumbnail(for: entry)
+                    )
+                } label: {
+                    HStack(spacing: 12) {
+                        if let image = scanHistory.thumbnail(for: entry) {
+                            Image(uiImage: image)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 48, height: 48)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                        } else {
+                            Image(systemName: "doc.text.magnifyingglass")
+                                .font(.title2)
+                                .frame(width: 48, height: 48)
+                                .foregroundStyle(.secondary)
+                        }
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Aktueller Scan")
+                                .font(.subheadline)
+                            Text(entry.timestamp.formatted(date: .abbreviated, time: .shortened))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            if let result = entry.analysisResult,
+                               !result.detectedSpeciesHints.isEmpty {
+                                Text(result.detectedSpeciesHints.joined(separator: ", "))
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                     }
                 }
-
-                if !entry.ocrText.isEmpty {
-                    DisclosureGroup("Erkannter Text (\(entry.ocrText.count) Zeichen)") {
-                        Text(entry.ocrText)
-                            .font(.footnote)
-                            .textSelection(.enabled)
-                    }
-                }
-
                 Button(role: .destructive) { resetCheck() } label: {
                     Label("Scan entfernen", systemImage: "xmark.circle")
                         .font(.caption)
                 }
             } else {
-                VStack(spacing: 8) {
-                    Image(systemName: "doc.text.magnifyingglass")
-                        .font(.largeTitle)
-                        .foregroundStyle(.secondary)
-                    Text("Kein Scan geladen")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    Text("Scanne ein Etikett im Scan-Tab oder lade einen vorhandenen Scan aus der Scan-Historie.")
+                Text("Wähle oder erfasse einen Scan im Scan-Tab.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var labelingStatusBanner: some View {
+        Section {
+            if labelingStore.isUpdating {
+                HStack(spacing: 6) {
+                    ProgressView()
+                    Text(labelingStore.updateDetail ?? "Regeldatenbank wird aktualisiert…")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
+                if let p = labelingStore.updateProgress {
+                    ProgressView(value: p)
+                }
+            } else {
+                Button {
+                    Task { await labelingStore.updateFromRemote() }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "shield.lefthalf.filled.badge.checkmark")
+                            .foregroundStyle(.secondary)
+                        if let dbInfo = labelingStore.dbInfo {
+                            Text("Regeln v\(dbInfo.version) · \(dbInfo.totalRuleCount) Regeln · \(formattedDataDate(dbInfo.createdAt))")
+                        } else if labelingStore.loadError != nil {
+                            Text("Regeldatenbank nicht verfügbar").foregroundStyle(.red)
+                        } else {
+                            Text("Regeldatenbank wird geladen…")
+                        }
+                        Spacer()
+                        Image(systemName: labelingStore.updateAvailable
+                              ? "arrow.down.circle.fill" : "arrow.down.circle")
+                            .foregroundStyle(labelingStore.updateAvailable ? Color.blue : Color.secondary.opacity(0.4))
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
             }
-        } header: {
-            Text("Geladener Scan")
         }
     }
 
@@ -349,27 +362,116 @@ struct LabelingCheckView: View {
         }
     }
 
-    private var historySection: some View {
-        Section("Scan-Historie") {
-            NavigationLink {
-                ScanHistoryPickerView(service: scanHistory, title: "Kennzeichnungs-Scans") { entry in
-                    LabelingScanEntryPreview(entry: entry, image: scanHistory.thumbnail(for: entry))
-                        .onAppear {
-                            selectedScanEntry = entry
-                            applyScanEntry(entry)
-                        }
+    // MARK: - Einzelfuttermittelkatalog
+
+    @ViewBuilder
+    private var feedMaterialCatalogSection: some View {
+        Section {
+            // Suchfeld
+            HStack {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                TextField("Bezeichnung oder Katalognummer", text: $catalogSearchText)
+                    .autocorrectionDisabled()
+                    .onChange(of: catalogSearchText) { _, q in
+                        selectedCatalogEntry = nil
+                        selectedDlgEntry = nil
+                        catalogSearchResults = FeedMaterialLookupService.search(
+                            query: q, in: labelingStore.feedMaterials, maxResults: 25)
+                        dlgSearchResults = FeedMaterialLookupService.searchDlg(
+                            query: q, in: labelingStore.dlgFeedMaterials, maxResults: 25)
+                    }
+                if !catalogSearchText.isEmpty {
+                    Button {
+                        catalogSearchText = ""
+                        catalogSearchResults = []
+                        dlgSearchResults = []
+                        selectedCatalogEntry = nil
+                        selectedDlgEntry = nil
+                    } label: {
+                        Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
                 }
-            } label: {
-                Label("Aus Scan-Historie laden", systemImage: "clock.arrow.circlepath")
             }
 
-            if let latest = scanHistory.entries.first {
-                Button {
-                    selectedScanEntry = latest
-                    applyScanEntry(latest)
-                } label: {
-                    Label("Letzten Scan laden", systemImage: "arrow.clockwise")
+            // VO (EU) 68/2013 Treffer
+            if !catalogSearchResults.isEmpty, selectedCatalogEntry == nil, selectedDlgEntry == nil {
+                Text("VO (EU) Nr. 68/2013")
+                    .font(.caption).foregroundStyle(.secondary)
+                ForEach(catalogSearchResults.prefix(8)) { material in
+                    Button {
+                        selectedCatalogEntry = material
+                        selectedDlgEntry = nil
+                        catalogSearchText = material.nameDe
+                        catalogSearchResults = []
+                        dlgSearchResults = []
+                    } label: {
+                        HStack {
+                            Text(material.catalogNumber)
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                                .frame(width: 52, alignment: .leading)
+                            Text(material.nameDe).font(.subheadline).foregroundStyle(.primary)
+                            Spacer()
+                        }
+                    }
+                    .buttonStyle(.plain)
                 }
+                if catalogSearchResults.count > 8 {
+                    Text("… und \(catalogSearchResults.count - 8) weitere").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
+            // DLG Positivliste Treffer
+            if !dlgSearchResults.isEmpty, selectedCatalogEntry == nil, selectedDlgEntry == nil,
+               !labelingStore.dlgFeedMaterials.isEmpty {
+                Text("DLG Positivliste (15. Auflage 2023)")
+                    .font(.caption).foregroundStyle(.secondary)
+                ForEach(dlgSearchResults.prefix(8)) { material in
+                    Button {
+                        selectedDlgEntry = material
+                        selectedCatalogEntry = nil
+                        catalogSearchText = material.nameDe
+                        catalogSearchResults = []
+                        dlgSearchResults = []
+                    } label: {
+                        HStack {
+                            Text(material.number)
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                                .frame(width: 60, alignment: .leading)
+                            Text(material.nameDe).font(.subheadline).foregroundStyle(.primary)
+                            Spacer()
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+                if dlgSearchResults.count > 8 {
+                    Text("… und \(dlgSearchResults.count - 8) weitere").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+
+            // Detail VO (EU) 68/2013
+            if let entry = selectedCatalogEntry {
+                FeedMaterialDetailRow(material: entry)
+            }
+
+            // Detail DLG Positivliste
+            if let entry = selectedDlgEntry {
+                DlgFeedMaterialDetailRow(material: entry)
+            }
+
+        } header: {
+            Text("Einzelfuttermittelkatalog")
+        } footer: {
+            if labelingStore.feedMaterials.isEmpty {
+                Text("Katalogdaten werden geladen…").font(.caption2)
+            } else {
+                let dlgInfo = labelingStore.dlgFeedMaterials.isEmpty
+                    ? "" : " · DLG \(labelingStore.dlgFeedMaterials.count)"
+                Text("VO 68/2013: \(labelingStore.feedMaterials.count) Einträge\(dlgInfo)")
+                    .font(.caption2)
             }
         }
     }
@@ -454,6 +556,16 @@ struct LabelingCheckView: View {
             additives: additiveStore.additives
         )
 
+        // DLG Positivliste: manuell ausgewählten Eintrag verwenden oder automatisch erkennen
+        let dlgMaterial = selectedDlgEntry
+            ?? FeedMaterialLookupService.findBestDlgMatch(
+                for: mergedText,
+                in: labelingStore.dlgFeedMaterials
+            )
+        let dlgResult = dlgMaterial.map {
+            DlgLabelingCheckService.check(ocrText: mergedText, material: $0)
+        }
+
         let result = LabelingCheckService.check(
             ocrText: mergedText,
             feedType: feedType,
@@ -462,7 +574,9 @@ struct LabelingCheckView: View {
             dbInfo: labelingStore.dbInfo,
             forcedNotCheckableRulePrefixes: notCheckablePrefixes,
             imageItems: entry.imageItems,
-            additiveDeclarations: declarations
+            detectedSpeciesHints: entry.analysisResult?.detectedSpeciesHints ?? [],
+            additiveDeclarations: declarations,
+            dlgCheckResult: dlgResult
         )
         checkResult = result
         isResultPresented = true
@@ -621,5 +735,136 @@ private struct ComparisonEntryRow: View {
         case .unclear:            return .orange
         case .notRequired:        return .secondary
         }
+    }
+}
+
+// MARK: - Feed Material Detail Row
+
+private struct FeedMaterialDetailRow: View {
+    let material: FeedMaterial
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(material.nameDe)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                    Text("Katalognummer \(material.catalogNumber)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text("Kap. \(material.chapter)")
+                    .font(.caption2)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.secondary.opacity(0.15))
+                    .clipShape(Capsule())
+            }
+
+            if !material.descriptionDe.isEmpty {
+                Text(material.descriptionDe)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !material.mandatoryDeclarationList.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Pflichtangaben:")
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.secondary)
+                    ForEach(material.mandatoryDeclarationList, id: \.self) { decl in
+                        Label(decl, systemImage: "checkmark.circle")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            if !material.restrictionsDe.isEmpty {
+                Label(material.restrictionsDe, systemImage: "exclamationmark.circle")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+            }
+
+            Text("Kapitel: \(material.chapterNameDe)")
+                .font(.caption2)
+                .foregroundStyle(Color.secondary.opacity(0.7))
+                .padding(.top, 2)
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+private struct DlgFeedMaterialDetailRow: View {
+    let material: DlgFeedMaterial
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(material.nameDe)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                    Text("DLG Nr. \(material.number)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text("Gr. \(material.groupNum)")
+                    .font(.caption2)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.blue.opacity(0.12))
+                    .clipShape(Capsule())
+            }
+
+            if !material.descriptionDe.isEmpty {
+                Text(material.descriptionDe)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if !material.differentiationDe.isEmpty {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Differenzierungsmerkmale:")
+                        .font(.caption2).fontWeight(.semibold).foregroundStyle(.secondary)
+                    Text(material.differentiationDe)
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+
+            if !material.requirementsDe.isEmpty {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Anforderungen:")
+                        .font(.caption2).fontWeight(.semibold).foregroundStyle(.secondary)
+                    Text(material.requirementsDe)
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+
+            if !material.labelingDe.isEmpty {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Kennzeichnung (Pflichtangaben):")
+                        .font(.caption2).fontWeight(.semibold).foregroundStyle(.secondary)
+                    Text(material.labelingDe)
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+            }
+
+            if !material.remarksDe.isEmpty {
+                Label(material.remarksDe, systemImage: "info.circle")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+            }
+
+            Text("\(material.groupNameDe) · DLG Positivliste \(material.edition). Auflage")
+                .font(.caption2)
+                .foregroundStyle(Color.secondary.opacity(0.7))
+                .padding(.top, 2)
+        }
+        .padding(.vertical, 4)
     }
 }

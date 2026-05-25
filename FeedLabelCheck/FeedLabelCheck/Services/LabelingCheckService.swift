@@ -17,10 +17,16 @@ struct LabelingCheckService {
         /// due to missing packaging area images (see `LabelCoverageAnalyzer`).
         forcedNotCheckableRulePrefixes: Set<String> = [],
         imageItems: [OCRImageItem]? = nil,
+        /// Animal species hints produced once by `ScanAnalysisService`.
+        /// Used as structured OCR evidence when the rule patterns are too strict
+        /// for phrases such as "für ausgewachsene Katzen".
+        detectedSpeciesHints: [String] = [],
         /// Structured additive declarations parsed from the OCR text by `AdditiveDeclarationParser`.
         /// When at least one declaration has `countsAsFound == true`, art15_006 is upgraded
         /// from `.probablyFound` to `.found`.
-        additiveDeclarations: [AdditiveDeclaration] = []
+        additiveDeclarations: [AdditiveDeclaration] = [],
+        /// DLG Positivliste check result, pre-computed by the caller.
+        dlgCheckResult: DlgCheckResult? = nil
     ) -> LabelingCheckResult {
         guard ocrText.count >= minOCRLength else {
             let results = rules.map { rule in
@@ -38,7 +44,8 @@ struct LabelingCheckService {
                 databaseInfo: dbInfo,
                 ocrText: ocrText,
                 imageItems: imageItems,
-                additiveDeclarations: additiveDeclarations.isEmpty ? nil : additiveDeclarations
+                additiveDeclarations: additiveDeclarations.isEmpty ? nil : additiveDeclarations,
+                dlgCheckResult: dlgCheckResult
             )
         }
 
@@ -71,7 +78,7 @@ struct LabelingCheckService {
             let firstFound = additiveDeclarations.first(where: \.countsAsFound)
             ruleResults = ruleResults.map { result in
                 guard result.rule.id == "art15_006",
-                      result.status == .probablyFound else { return result }
+                      result.status == .probablyFound || result.status == .missing else { return result }
                 var upgradeNote = "Strukturierte Zusatzstoffdeklaration erkannt"
                 if let decl = firstFound {
                     let amountStr = decl.amount?.displayString ?? ""
@@ -90,6 +97,22 @@ struct LabelingCheckService {
             }
         }
 
+        if !detectedSpeciesHints.isEmpty {
+            let speciesText = detectedSpeciesHints.joined(separator: ", ")
+            ruleResults = ruleResults.map { result in
+                guard result.rule.requirementType == "animal_species",
+                      result.status == .missing || result.status == .probablyFound else { return result }
+                return RuleCheckResult(
+                    rule: result.rule,
+                    status: .found,
+                    matchedText: speciesText,
+                    matchedLanguage: "de",
+                    confidence: 0.9,
+                    note: "Tierart wurde aus der Scan-Analyse übernommen. Bitte OCR-Ausschnitt manuell bestätigen."
+                )
+            }
+        }
+
         let overall = overallStatus(from: ruleResults)
 
         return LabelingCheckResult(
@@ -102,7 +125,8 @@ struct LabelingCheckService {
             databaseInfo: dbInfo,
             ocrText: ocrText,
             imageItems: imageItems,
-            additiveDeclarations: additiveDeclarations.isEmpty ? nil : additiveDeclarations
+            additiveDeclarations: additiveDeclarations.isEmpty ? nil : additiveDeclarations,
+            dlgCheckResult: dlgCheckResult
         )
     }
 

@@ -211,6 +211,71 @@ final class LabelingControlRegressionTests: XCTestCase {
         XCTAssertEqual(result.overallStatus, .nichtPruefbar)
     }
 
+    func testAnimalSpeciesHintUpgradesMissingRule() {
+        let rule = makeDummyRule(
+            id: "art17_001",
+            requirementType: "animal_species",
+            patterns: [
+                LabelingRulePattern(
+                    id: "p1",
+                    ruleId: "art17_001",
+                    patternType: "keyword",
+                    patternValue: "für Katzen",
+                    patternLanguage: "de",
+                    confidenceWeight: 1.0,
+                    isNegativePattern: false
+                )
+            ]
+        )
+        let result = LabelingCheckService.check(
+            ocrText: "Ergänzungsfuttermittel für ausgewachsene Katzen Zusammensetzung Fleisch Rohprotein 28 Prozent",
+            feedType: makeDummyFeedType(),
+            feedTypeConfidence: 0.9,
+            rules: [rule],
+            dbInfo: nil,
+            detectedSpeciesHints: ["Katze"]
+        )
+
+        XCTAssertEqual(result.ruleResults.first?.status, .found)
+        XCTAssertEqual(result.ruleResults.first?.matchedText, "Katze")
+    }
+
+    func testStructuredAdditiveDeclarationUpgradesMissingAdditiveRule() {
+        let rule = makeDummyRule(
+            id: "art15_006",
+            requirementType: "additives",
+            patterns: [
+                LabelingRulePattern(
+                    id: "p1",
+                    ruleId: "art15_006",
+                    patternType: "keyword",
+                    patternValue: "Zusatzstoffe",
+                    patternLanguage: "de",
+                    confidenceWeight: 1.0,
+                    isNegativePattern: false
+                )
+            ]
+        )
+        let declaration = AdditiveDeclaration(
+            substanceName: "Taurin",
+            amount: ParsedAdditiveAmount(value: 1000, unit: "mg/kg", rawText: "1000 mg/kg"),
+            rawText: "Taurin 1000 mg/kg",
+            confidence: .exactMatch,
+            matchedAdditive: nil
+        )
+        let result = LabelingCheckService.check(
+            ocrText: "Ergaenzungsfuttermittel fuer Katzen Taurin 1000 mg/kg Rohprotein 28 Prozent",
+            feedType: makeDummyFeedType(),
+            feedTypeConfidence: 0.9,
+            rules: [rule],
+            dbInfo: nil,
+            additiveDeclarations: [declaration]
+        )
+
+        XCTAssertEqual(result.ruleResults.first?.status, .found)
+        XCTAssertTrue(result.ruleResults.first?.note?.contains("Strukturierte Zusatzstoffdeklaration") == true)
+    }
+
     func testScanEntryBackwardCompatibilityUnchanged() throws {
         // ScanEntry must still decode legacy JSON (no new required fields)
         let json = """
@@ -519,6 +584,75 @@ final class LabelingControlComparisonServiceTests: XCTestCase {
         XCTAssertNil(date)
     }
 
+    func testExtractDateNormalizesYearFirst() {
+        // Year-first input must be normalized to DD.MM.YYYY
+        let date = LabelingControlComparisonService.extractDate(from: "EXP 2026/12/31")
+        XCTAssertEqual(date, "31.12.2026", "Year-first date must be normalized to DD.MM.YYYY")
+    }
+
+    func testExtractDateNormalizesLeadingZeros() {
+        // Two-digit year and single-digit day/month
+        let date = LabelingControlComparisonService.extractDate(from: "MHD 1.2.26")
+        XCTAssertEqual(date, "01.02.2026", "Short date must be normalized with leading zeros and 4-digit year")
+    }
+
+    func testMHDSeparatorVariantMatched() {
+        // Basis "31.12.2026", packaging "31-12-2026" → same date, different separator → matched
+        let suggestion = LabelingRequirementSuggestion(
+            category: .bestBefore,
+            status: .mustDeclare,
+            extractedText: "MHD 31.12.2026",
+            normalizedValue: LabelingNormalizedValue(numericValue: nil, unit: nil, textValue: "MHD 31.12.2026")
+        )
+        let entry = LabelingControlComparisonService.compare(
+            suggestion: suggestion,
+            checkResult: makeCheckResultWithMHD(status: .found, matchedText: "MHD 31-12-2026"),
+            packagingText: "MHD 31-12-2026 LOT A12345"
+        )
+        XCTAssertEqual(
+            entry.packagingStatus, .matched,
+            "31.12.2026 (basis) vs 31-12-2026 (packaging) must be matched despite different separator"
+        )
+    }
+
+    func testMHDYearFirstFormatMatched() {
+        // Basis "EXP 2026/12/31", packaging also year-first → matched
+        let suggestion = LabelingRequirementSuggestion(
+            category: .bestBefore,
+            status: .mustDeclare,
+            extractedText: "EXP 2026/12/31",
+            normalizedValue: LabelingNormalizedValue(numericValue: nil, unit: nil, textValue: "EXP 2026/12/31")
+        )
+        let entry = LabelingControlComparisonService.compare(
+            suggestion: suggestion,
+            checkResult: makeCheckResultWithMHD(status: .found, matchedText: "EXP 2026/12/31"),
+            packagingText: "EXP 2026/12/31 NU250529H"
+        )
+        XCTAssertEqual(
+            entry.packagingStatus, .matched,
+            "Year-first date on both basis and packaging must be matched"
+        )
+    }
+
+    func testMHDLeadingZeroVariantMatched() {
+        // Basis "1.2.2026" (no leading zero), packaging "01.02.2026" (leading zeros) → matched
+        let suggestion = LabelingRequirementSuggestion(
+            category: .bestBefore,
+            status: .mustDeclare,
+            extractedText: "MHD 1.2.2026",
+            normalizedValue: LabelingNormalizedValue(numericValue: nil, unit: nil, textValue: "MHD 1.2.2026")
+        )
+        let entry = LabelingControlComparisonService.compare(
+            suggestion: suggestion,
+            checkResult: makeCheckResultWithMHD(status: .found, matchedText: "MHD 01.02.2026"),
+            packagingText: "MHD 01.02.2026"
+        )
+        XCTAssertEqual(
+            entry.packagingStatus, .matched,
+            "1.2.2026 (basis) vs 01.02.2026 (packaging) must be matched"
+        )
+    }
+
     // MARK: - D) Regression: no new OCR workflow / no duplicate storage
 
     func testLabelingCheckResultStructureUnchanged() {
@@ -536,7 +670,8 @@ final class LabelingControlComparisonServiceTests: XCTestCase {
             databaseInfo: nil,
             ocrText: "test",
             imageItems: nil,
-            additiveDeclarations: nil
+            additiveDeclarations: nil,
+            dlgCheckResult: nil
         )
         XCTAssertEqual(result.feedType.id, "pet_feed")
         XCTAssertNil(result.additiveDeclarations)
@@ -572,7 +707,8 @@ final class LabelingControlComparisonServiceTests: XCTestCase {
             databaseInfo: nil,
             ocrText: "",
             imageItems: nil,
-            additiveDeclarations: nil
+            additiveDeclarations: nil,
+            dlgCheckResult: nil
         )
     }
 
@@ -633,7 +769,8 @@ final class LabelingControlComparisonServiceTests: XCTestCase {
             databaseInfo: nil,
             ocrText: "",
             imageItems: items,
-            additiveDeclarations: nil
+            additiveDeclarations: nil,
+            dlgCheckResult: nil
         )
     }
 
@@ -680,7 +817,8 @@ final class LabelingControlComparisonServiceTests: XCTestCase {
             imageItems: [
                 OCRImageItem(id: UUID(), imageType: .vorderseite, thumbnailFileName: nil, ocrText: "test"),
             ],
-            additiveDeclarations: nil
+            additiveDeclarations: nil,
+            dlgCheckResult: nil
         )
     }
 }

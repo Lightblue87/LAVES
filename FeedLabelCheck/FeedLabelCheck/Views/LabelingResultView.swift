@@ -14,6 +14,7 @@ struct LabelingResultView: View {
                 recheckSection
                 imageCoverageSection
                 additiveDeclarationsSection
+                dlgSection
                 metaSection
                 rulesSection
                 disclaimerSection
@@ -122,6 +123,56 @@ struct LabelingResultView: View {
                 Text("Erkannte Zusatzstoffangaben")
             } footer: {
                 Text("Automatische Erkennung – kein Ersatz für eine amtliche Kontrolle.")
+                    .font(.caption2)
+            }
+        }
+    }
+
+    // MARK: - DLG Section
+
+    @ViewBuilder
+    private var dlgSection: some View {
+        if let dlg = result.dlgCheckResult {
+            Section {
+                // Materialname-Zeile
+                HStack(spacing: 10) {
+                    Image(systemName: "list.bullet.clipboard")
+                        .foregroundStyle(.blue)
+                        .frame(width: 20)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(dlg.material.nameDe)
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        Text("\(dlg.material.number) · Gruppe \(dlg.material.groupNum): \(dlg.material.groupNameDe)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.vertical, 2)
+
+                if dlg.isNotDeclared {
+                    Label("Keine Kennzeichnungsanforderungen in der DLG Positivliste hinterlegt.",
+                          systemImage: "info.circle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(dlg.findings) { finding in
+                        DlgFindingRow(finding: finding)
+                    }
+
+                    if dlg.hasMissingMandatory {
+                        Label(
+                            "Eine oder mehrere Pflichtangaben wurden im OCR-Text nicht gefunden.",
+                            systemImage: "exclamationmark.triangle.fill"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                    }
+                }
+            } header: {
+                Text("DLG Positivliste – Kennzeichnungsabgleich")
+            } footer: {
+                Text("Automatischer Abgleich auf Basis erkannter OCR-Daten. \(dlg.material.number) \(dlg.material.nameDe) · DLG Positivliste 15. Auflage 2023")
                     .font(.caption2)
             }
         }
@@ -338,6 +389,47 @@ struct AdditiveDeclarationDetailView: View {
 
     private func formatValue(_ v: Double) -> String {
         v == v.rounded(.towardZero) && v < 1_000_000 ? "\(Int(v))" : String(format: "%.2f", v)
+    }
+}
+
+// MARK: - DLG Finding Row
+
+private struct DlgFindingRow: View {
+    let finding: DlgNutrientFinding
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: finding.statusIcon)
+                .foregroundStyle(statusColor)
+                .frame(width: 20)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(finding.requirement.nutrient)
+                    .font(.subheadline)
+                if !finding.requirement.isMandatory, let cond = finding.requirement.condition {
+                    Text(cond)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if let snippet = finding.matchedText {
+                    Text(snippet)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                Text(finding.statusLabel)
+                    .font(.caption)
+                    .foregroundStyle(statusColor)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private var statusColor: Color {
+        switch finding.status {
+        case .found:             return .green
+        case .missing:           return .red
+        case .conditionalAbsent: return .orange
+        }
     }
 }
 

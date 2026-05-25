@@ -317,21 +317,27 @@ struct LabelingControlComparisonService {
 
         switch status {
         case .found, .probablyFound:
-            // If the basis document contains a concrete date, verify it appears on the packaging.
-            // "MHD 31.12.2026" (basis) vs "MHD 31.12.2025" (packaging) → mismatch.
-            if let basisDate = extractDate(from: suggestion.extractedText) {
-                if textContainsKeyword(basisDate, in: packagingText) {
+            // If the basis document contains a concrete date, verify the packaging carries
+            // the same date.  Comparison is done on parsed (day, month, year) integers so
+            // separator style (`.` vs `-` vs `/`) and leading-zero differences don't produce
+            // false mismatches.
+            if let basisComponents = extractDateComponents(from: suggestion.extractedText) {
+                if packagingContainsDateComponents(basisComponents, in: packagingText) {
                     return ComparisonEntry(
                         suggestion: suggestion,
                         packagingStatus: .matched,
                         packagingText: mhdResult?.matchedText
                     )
                 } else {
+                    let basisStr = String(
+                        format: "%02d.%02d.%04d",
+                        basisComponents.day, basisComponents.month, basisComponents.year
+                    )
                     return ComparisonEntry(
                         suggestion: suggestion,
                         packagingStatus: .mismatch,
                         packagingText: mhdResult?.matchedText,
-                        note: "Grundlage-Datum \(basisDate) auf Verpackungs-OCR nicht bestätigt – möglicherweise aufgedruckt."
+                        note: "Grundlage-Datum \(basisStr) auf Verpackungs-OCR nicht bestätigt – möglicherweise aufgedruckt."
                     )
                 }
             }
@@ -498,16 +504,72 @@ struct LabelingControlComparisonService {
 
     // MARK: - Private helpers
 
-    /// Extract the first date-like string from a text fragment.
-    /// "MHD 31.12.2026" → "31.12.2026",  "EXP 2026/12/31" → "2026/12/31"
+    /// Extracts and normalizes the first recognized date in `text` to `DD.MM.YYYY`.
+    /// Delegates to `extractDateComponents` so day-first, year-first, and all separator
+    /// styles are handled uniformly. Returns `nil` when no date pattern is found.
     static func extractDate(from text: String) -> String? {
-        let pattern = #"\d{1,2}[.\/\-]\d{1,2}[.\/\-]\d{2,4}"#
-        guard let regex = try? NSRegularExpression(pattern: pattern),
-              let match = regex.firstMatch(
-                  in: text, range: NSRange(text.startIndex..., in: text)
-              ),
-              let range = Range(match.range, in: text) else { return nil }
-        return String(text[range])
+        guard let c = extractDateComponents(from: text) else { return nil }
+        return String(format: "%02d.%02d.%04d", c.day, c.month, c.year)
+    }
+
+    /// Parses the first recognized date in `text` into a `(day, month, year)` tuple.
+    ///
+    /// Supported formats:
+    /// - Day-first:  `DD[sep]MM[sep]YYYY` or `DD[sep]MM[sep]YY`  (e.g. `31.12.2026`)
+    /// - Year-first: `YYYY[sep]MM[sep]DD`                         (e.g. `2026/12/31`)
+    ///
+    /// Separators: `.`, `/`, `-`.  Two-digit years are expanded to 2000+.
+    /// Day 1–31 and month 1–12 are validated; invalid combinations return `nil`.
+    private static func extractDateComponents(
+        from text: String
+    ) -> (day: Int, month: Int, year: Int)? {
+        // Try year-first first to prevent "2026" being split as day=20, remainder=26/…
+        let yearFirst = #"(\d{4})[.\/\-](\d{1,2})[.\/\-](\d{1,2})"#
+        if let regex = try? NSRegularExpression(pattern: yearFirst),
+           let m = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+           let y = intCapture(m, 1, text), let mo = intCapture(m, 2, text),
+           let d = intCapture(m, 3, text),
+           y > 1900, mo >= 1, mo <= 12, d >= 1, d <= 31 {
+            return (d, mo, y)
+        }
+        // Day-first (DD[sep]MM[sep]YYYY or DD[sep]MM[sep]YY)
+        let dayFirst = #"(\d{1,2})[.\/\-](\d{1,2})[.\/\-](\d{2,4})"#
+        if let regex = try? NSRegularExpression(pattern: dayFirst),
+           let m = regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)),
+           let d = intCapture(m, 1, text), let mo = intCapture(m, 2, text),
+           var y = intCapture(m, 3, text),
+           d >= 1, d <= 31, mo >= 1, mo <= 12 {
+            if y < 100 { y += 2000 }
+            return (d, mo, y)
+        }
+        return nil
+    }
+
+    /// Returns `true` if `packagingText` contains any date whose day/month/year components
+    /// match `target`, regardless of separator style (`31.12.2026` == `31-12-2026`) or
+    /// leading-zero differences (`01.02.2026` == `1.2.2026`).
+    private static func packagingContainsDateComponents(
+        _ target: (day: Int, month: Int, year: Int),
+        in packagingText: String
+    ) -> Bool {
+        // Scan both year-first and day-first date patterns in the packaging text.
+        let pattern = #"(?:\d{4}[.\/\-]\d{1,2}[.\/\-]\d{1,2}|\d{1,2}[.\/\-]\d{1,2}[.\/\-]\d{2,4})"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return false }
+        let nsRange = NSRange(packagingText.startIndex..., in: packagingText)
+        return regex.matches(in: packagingText, range: nsRange).contains { m in
+            guard let r = Range(m.range, in: packagingText) else { return false }
+            guard let c = extractDateComponents(from: String(packagingText[r])) else { return false }
+            return c.day == target.day && c.month == target.month && c.year == target.year
+        }
+    }
+
+    /// Extracts an integer value from a regex capture group.
+    private static func intCapture(
+        _ match: NSTextCheckingResult, _ index: Int, _ text: String
+    ) -> Int? {
+        guard index < match.numberOfRanges,
+              let r = Range(match.range(at: index), in: text) else { return nil }
+        return Int(text[r])
     }
 
     private static func hasBottomOrLidImage(_ checkResult: LabelingCheckResult) -> Bool {

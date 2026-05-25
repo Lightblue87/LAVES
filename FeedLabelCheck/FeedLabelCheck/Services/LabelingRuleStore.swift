@@ -4,6 +4,8 @@ import Foundation
 @MainActor
 final class LabelingRuleStore: ObservableObject {
     @Published private(set) var feedTypes: [LabelingFeedType] = []
+    @Published private(set) var feedMaterials: [FeedMaterial] = []
+    @Published private(set) var dlgFeedMaterials: [DlgFeedMaterial] = []
     @Published private(set) var isLoaded = false
     @Published private(set) var loadError: String?
     @Published private(set) var dbInfo: LabelingDatabaseInfo?
@@ -16,6 +18,8 @@ final class LabelingRuleStore: ObservableObject {
     private let downloader = LabelingDownloadService()
     private let defaults = UserDefaults.standard
     private let shaKey = "feedlabelcheck.labeling.sqlite.sha256"
+    private var didCheckForUpdates = false
+    private var isCheckingForUpdates = false
 
     // MARK: - Database URL
 
@@ -43,6 +47,8 @@ final class LabelingRuleStore: ObservableObject {
 
         do {
             feedTypes = try repository.loadFeedTypes(from: url)
+            feedMaterials = try repository.loadFeedMaterials(from: url)
+            dlgFeedMaterials = try repository.loadDlgFeedMaterials(from: url)
             dbInfo = try repository.loadDatabaseInfo(from: url)
             loadError = nil
             isLoaded = true
@@ -60,7 +66,12 @@ final class LabelingRuleStore: ObservableObject {
     // MARK: - Updates
 
     func checkForUpdates() async {
-        guard !isUpdating else { return }
+        guard !isUpdating, !isCheckingForUpdates, !didCheckForUpdates else { return }
+        isCheckingForUpdates = true
+        defer {
+            isCheckingForUpdates = false
+            didCheckForUpdates = true
+        }
         do {
             let manifest = try await downloader.fetchLabelingManifest()
             let stored = defaults.string(forKey: shaKey)
@@ -99,10 +110,8 @@ final class LabelingRuleStore: ObservableObject {
                 expectedSHA256: manifest.sha256,
                 expectedBytes: manifest.bytes,
                 progress: { [weak self] v in
-                    await MainActor.run {
-                        self?.updateProgress = v
-                        self?.updateDetail = "Herunterladen (\(Int(v * 100)) %)"
-                    }
+                    self?.updateProgress = v
+                    self?.updateDetail = "Herunterladen (\(Int(v * 100)) %)"
                 }
             )
 
@@ -115,6 +124,8 @@ final class LabelingRuleStore: ObservableObject {
             try FileManager.default.moveItem(at: downloaded, to: localDatabaseURL)
 
             feedTypes = try repository.loadFeedTypes(from: localDatabaseURL)
+            feedMaterials = try repository.loadFeedMaterials(from: localDatabaseURL)
+            dlgFeedMaterials = try repository.loadDlgFeedMaterials(from: localDatabaseURL)
             dbInfo = try repository.loadDatabaseInfo(from: localDatabaseURL)
             defaults.set(manifest.sha256, forKey: shaKey)
             updateAvailable = false
@@ -155,7 +166,7 @@ struct LabelingDownloadService {
     private let defaultDatabaseFileName = "labeling.sqlite"
 
     var manifestURL: URL {
-        rawBaseURL.appendingPathComponent("manifest.json")
+        rawBaseURL.appendingPathComponent("manifest-v2.json")
     }
 
     func fetchLabelingManifest() async throws -> LabelingManifestEntry {
@@ -177,7 +188,7 @@ struct LabelingDownloadService {
         fileName: String? = nil,
         expectedSHA256: String,
         expectedBytes: Int,
-        progress: @escaping @Sendable (Double) async -> Void = { _ in }
+        progress: @escaping @MainActor @Sendable (Double) -> Void = { _ in }
     ) async throws -> URL {
         let databaseURL = rawURL(fileName: fileName ?? defaultDatabaseFileName)
         debugLog("SQLite URL: \(databaseURL.absoluteString)")
@@ -197,7 +208,11 @@ struct LabelingDownloadService {
         guard digest == expectedSHA256.lowercased() else {
             throw DataDownloadError.invalidChecksum
         }
-        return url
+
+        let verifiedURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(UUID().uuidString)-\(databaseURL.lastPathComponent)")
+        try data.write(to: verifiedURL, options: .atomic)
+        return verifiedURL
     }
 
     func rawURL(fileName: String) -> URL {
@@ -217,13 +232,15 @@ enum LabelingDownloadError: LocalizedError {
 }
 
 private final class LabelingDownloadProgressDelegate: NSObject, URLSessionDownloadDelegate {
-    private let progress: @Sendable (Double) async -> Void
-    init(progress: @escaping @Sendable (Double) async -> Void) { self.progress = progress }
+    private let progress: @MainActor @Sendable (Double) -> Void
+    init(progress: @escaping @MainActor @Sendable (Double) -> Void) { self.progress = progress }
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {}
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask,
                     didWriteData: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
         guard totalBytesExpectedToWrite > 0 else { return }
         let v = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
-        Task { await progress(min(max(v, 0), 1)) }
+        Task { @MainActor [progress] in
+            progress(min(max(v, 0), 1))
+        }
     }
 }

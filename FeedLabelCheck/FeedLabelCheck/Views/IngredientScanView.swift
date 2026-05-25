@@ -28,6 +28,7 @@ struct IngredientScanView: View {
         NavigationStack {
             Form {
                 imageStripSection
+                historySection
                 if isAnalysing {
                     analysisProgressSection
                 } else if let analyseError {
@@ -50,6 +51,46 @@ struct IngredientScanView: View {
     }
 
     // MARK: - Sections
+
+    private var historySection: some View {
+        Section {
+            NavigationLink {
+                ScanHistoryPickerView(service: scanHistory, title: "Scan-Historie") { entry in
+                    CentralScanHistoryEntryView(
+                        entry: entry,
+                        image: scanHistory.thumbnail(for: entry),
+                        feedTypeName: feedTypeName(for: entry.analysisResult?.detectedFeedTypeId),
+                        onUseForAdditives: {
+                            loadHistoryEntry(entry)
+                            selectedTab = .additives
+                        },
+                        onUseForLabeling: {
+                            loadHistoryEntry(entry)
+                            selectedTab = .labeling
+                        }
+                    )
+                    .onAppear {
+                        loadHistoryEntry(entry)
+                    }
+                }
+            } label: {
+                Label("Gespeicherte Scans", systemImage: "clock.arrow.circlepath")
+            }
+
+            if let latest = scanHistory.entries.first {
+                Button {
+                    loadHistoryEntry(latest)
+                } label: {
+                    Label("Letzten Scan laden", systemImage: "arrow.clockwise")
+                }
+            }
+        } header: {
+            Text("Scan-Historie")
+        } footer: {
+            Text("Ein hier geladener Scan steht anschließend automatisch in Zusatzstoffe und Kennzeichnung zur Verfügung.")
+                .font(.caption2)
+        }
+    }
 
     private var imageStripSection: some View {
         Section {
@@ -312,11 +353,104 @@ struct IngredientScanView: View {
         savedEntry = nil
     }
 
+    private func loadHistoryEntry(_ entry: ScanEntry) {
+        selectedAdditiveScan = entry
+        selectedLabelingScan = entry
+        savedEntry = entry
+        if let result = entry.analysisResult {
+            analysisResult = result
+        } else if !entry.ocrText.isEmpty {
+            analysisResult = ScanAnalysisService.analyze(
+                mergedText: entry.ocrText,
+                imageItems: entry.imageItems,
+                feedTypes: labelingStore.feedTypes
+            )
+        } else {
+            analysisResult = nil
+        }
+        analyseError = nil
+    }
+
+    private func feedTypeName(for id: String?) -> String? {
+        guard let id else { return nil }
+        return labelingStore.feedTypes.first(where: { $0.id == id })?.displayName
+    }
+
     private func resetAll() {
         session.reset()
         analysisResult = nil
         savedEntry = nil
         analyseError = nil
+    }
+}
+
+private struct CentralScanHistoryEntryView: View {
+    let entry: ScanEntry
+    let image: UIImage?
+    let feedTypeName: String?
+    let onUseForAdditives: () -> Void
+    let onUseForLabeling: () -> Void
+
+    var body: some View {
+        List {
+            Section("Scan") {
+                if let image {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(maxHeight: 240)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                }
+                LabeledContent("Datum", value: entry.timestamp.formatted(date: .abbreviated, time: .shortened))
+                LabeledContent("Bilder", value: "\(entry.imageCount)")
+            }
+
+            if let result = entry.analysisResult {
+                Section("Erkannte Inhalte") {
+                    if let feedTypeName {
+                        LabeledContent("Futtermittelart", value: feedTypeName)
+                    }
+                    if !result.detectedSpeciesHints.isEmpty {
+                        LabeledContent("Tierarten", value: result.detectedSpeciesHints.joined(separator: ", "))
+                    }
+                    let areas = result.labelingAreas.detectedNames
+                    if !areas.isEmpty {
+                        LabeledContent("Bereiche", value: areas.joined(separator: ", "))
+                    }
+                    if !result.additiveHints.detectedSubstanceNames.isEmpty {
+                        LabeledContent("Zusatzstoffe", value: result.additiveHints.detectedSubstanceNames.joined(separator: ", "))
+                    } else if result.additiveHints.hasAdditiveSection {
+                        LabeledContent("Zusatzstoffe", value: "Abschnitt erkannt")
+                    }
+                }
+            }
+
+            Section("Verwenden") {
+                Button {
+                    onUseForAdditives()
+                } label: {
+                    Label("Für Zusatzstoffe verwenden", systemImage: "list.bullet.rectangle")
+                }
+
+                Button {
+                    onUseForLabeling()
+                } label: {
+                    Label("Für Kennzeichnung verwenden", systemImage: "tag.circle")
+                }
+            }
+
+            if !entry.ocrText.isEmpty {
+                Section {
+                    DisclosureGroup("Erkannter Text (\(entry.ocrText.count) Zeichen)") {
+                        Text(entry.ocrText)
+                            .font(.footnote)
+                            .textSelection(.enabled)
+                    }
+                }
+            }
+        }
+        .navigationTitle("Scan")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

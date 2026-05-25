@@ -124,6 +124,68 @@ struct LabelingCheckResult {
     /// Structured additive declarations parsed from the OCR text. Nil when no
     /// Zusatzstoff declarations were detected or no additive DB was available.
     let additiveDeclarations: [AdditiveDeclaration]?
+    /// DLG Positivliste check result. Nil when no DLG material was identified.
+    let dlgCheckResult: DlgCheckResult?
+}
+
+// MARK: - DLG Positivliste Check Results
+
+/// Eine einzelne Nährstoff-Anforderung aus dem `labeling_de`-Feld der DLG Positivliste.
+struct DlgNutrientRequirement: Hashable {
+    let nutrient: String
+    let isMandatory: Bool
+    let condition: String?
+}
+
+/// Ergebnisstatus beim Abgleich eines Nährstoffs gegen den OCR-Text.
+enum DlgNutrientStatus: Hashable {
+    /// Nährstoff im OCR-Text gefunden.
+    case found
+    /// Pflicht-Nährstoff nicht im OCR-Text gefunden.
+    case missing
+    /// Bedingt erforderlicher Nährstoff nicht im Text – Bedingung ggf. nicht zutreffend.
+    case conditionalAbsent
+}
+
+struct DlgNutrientFinding: Identifiable {
+    let id = UUID()
+    let requirement: DlgNutrientRequirement
+    let status: DlgNutrientStatus
+    let matchedText: String?
+
+    var statusIcon: String {
+        switch status {
+        case .found:             return "checkmark.circle.fill"
+        case .missing:           return "xmark.circle.fill"
+        case .conditionalAbsent: return "questionmark.circle"
+        }
+    }
+
+    var statusLabel: String {
+        switch status {
+        case .found:             return "Gefunden"
+        case .missing:           return "Nicht gefunden"
+        case .conditionalAbsent: return "Bedingt – nicht gefunden"
+        }
+    }
+}
+
+struct DlgCheckResult {
+    let material: DlgFeedMaterial
+    let findings: [DlgNutrientFinding]
+
+    /// true wenn mindestens eine Pflichtangabe fehlt.
+    var hasMissingMandatory: Bool {
+        findings.contains { $0.requirement.isMandatory && $0.status == .missing }
+    }
+
+    /// true wenn mindestens eine bedingte Angabe nicht im Text gefunden wurde.
+    var hasConditionalAbsent: Bool {
+        findings.contains { $0.status == .conditionalAbsent }
+    }
+
+    /// true wenn kein `labeling_de`-Eintrag vorhanden war (keine Angaben zu prüfen).
+    var isNotDeclared: Bool { findings.isEmpty }
 }
 
 // MARK: - Database Info

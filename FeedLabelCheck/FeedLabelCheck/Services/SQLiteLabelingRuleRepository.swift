@@ -5,6 +5,8 @@ protocol LabelingRuleRepository {
     func loadFeedTypes(from url: URL) throws -> [LabelingFeedType]
     func loadRules(from url: URL, forFeedType feedTypeId: String) throws -> [LabelingRule]
     func loadDatabaseInfo(from url: URL) throws -> LabelingDatabaseInfo
+    func loadFeedMaterials(from url: URL) throws -> [FeedMaterial]
+    func loadDlgFeedMaterials(from url: URL) throws -> [DlgFeedMaterial]
 }
 
 struct SQLiteLabelingRuleRepository: LabelingRuleRepository {
@@ -88,6 +90,42 @@ struct SQLiteLabelingRuleRepository: LabelingRuleRepository {
         }
     }
 
+    func loadFeedMaterials(from url: URL) throws -> [FeedMaterial] {
+        let db = try openReadonly(url)
+        defer { sqlite3_close(db) }
+
+        // Graceful fallback: table may not exist in older DB versions
+        guard table("feed_materials", hasColumn: "catalog_number", db: db) else { return [] }
+
+        let sql = """
+        SELECT catalog_number, chapter, chapter_name_de, name_de,
+               COALESCE(description_de, ''), COALESCE(mandatory_declarations_de, ''),
+               COALESCE(restrictions_de, ''), COALESCE(regulation, '68/2013')
+        FROM feed_materials
+        ORDER BY catalog_number
+        """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw LabelingRepositoryError.queryFailed(errorMessage(db))
+        }
+        defer { sqlite3_finalize(stmt) }
+
+        var result: [FeedMaterial] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            result.append(FeedMaterial(
+                catalogNumber: text(stmt, 0) ?? "",
+                chapter: Int(sqlite3_column_int(stmt, 1)),
+                chapterNameDe: text(stmt, 2) ?? "",
+                nameDe: text(stmt, 3) ?? "",
+                descriptionDe: text(stmt, 4) ?? "",
+                mandatoryDeclarationsDe: text(stmt, 5) ?? "",
+                restrictionsDe: text(stmt, 6) ?? "",
+                regulation: text(stmt, 7) ?? "68/2013"
+            ))
+        }
+        return result
+    }
+
     func loadDatabaseInfo(from url: URL) throws -> LabelingDatabaseInfo {
         let db = try openReadonly(url)
         defer { sqlite3_close(db) }
@@ -120,6 +158,47 @@ struct SQLiteLabelingRuleRepository: LabelingRuleRepository {
             totalRuleCount: ruleCount,
             sha256: meta["labeling_sha256"] ?? "–"
         )
+    }
+
+    func loadDlgFeedMaterials(from url: URL) throws -> [DlgFeedMaterial] {
+        let db = try openReadonly(url)
+        defer { sqlite3_close(db) }
+
+        // Graceful fallback: table may not exist in older DB versions
+        guard table("dlg_feed_materials", hasColumn: "number", db: db) else { return [] }
+
+        let sql = """
+        SELECT number, group_num, group_name_de, name_de,
+               COALESCE(description_de, ''), COALESCE(differentiation_de, ''),
+               COALESCE(requirements_de, ''), COALESCE(labeling_de, ''),
+               COALESCE(process_de, ''), COALESCE(remarks_de, ''),
+               COALESCE(edition, '15')
+        FROM dlg_feed_materials
+        ORDER BY number
+        """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+            throw LabelingRepositoryError.queryFailed(errorMessage(db))
+        }
+        defer { sqlite3_finalize(stmt) }
+
+        var result: [DlgFeedMaterial] = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            result.append(DlgFeedMaterial(
+                number:            text(stmt, 0) ?? "",
+                groupNum:          Int(sqlite3_column_int(stmt, 1)),
+                groupNameDe:       text(stmt, 2) ?? "",
+                nameDe:            text(stmt, 3) ?? "",
+                descriptionDe:     text(stmt, 4) ?? "",
+                differentiationDe: text(stmt, 5) ?? "",
+                requirementsDe:    text(stmt, 6) ?? "",
+                labelingDe:        text(stmt, 7) ?? "",
+                processDe:         text(stmt, 8) ?? "",
+                remarksDe:         text(stmt, 9) ?? "",
+                edition:           text(stmt, 10) ?? "15"
+            ))
+        }
+        return result
     }
 
     // MARK: - Private helpers
