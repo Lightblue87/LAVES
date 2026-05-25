@@ -24,7 +24,9 @@ struct LabelingCheckService {
         /// Structured additive declarations parsed from the OCR text by `AdditiveDeclarationParser`.
         /// When at least one declaration has `countsAsFound == true`, art15_006 is upgraded
         /// from `.probablyFound` to `.found`.
-        additiveDeclarations: [AdditiveDeclaration] = []
+        additiveDeclarations: [AdditiveDeclaration] = [],
+        /// DLG Positivliste check result, pre-computed by the caller.
+        dlgCheckResult: DlgCheckResult? = nil
     ) -> LabelingCheckResult {
         guard ocrText.count >= minOCRLength else {
             let results = rules.map { rule in
@@ -42,7 +44,8 @@ struct LabelingCheckService {
                 databaseInfo: dbInfo,
                 ocrText: ocrText,
                 imageItems: imageItems,
-                additiveDeclarations: additiveDeclarations.isEmpty ? nil : additiveDeclarations
+                additiveDeclarations: additiveDeclarations.isEmpty ? nil : additiveDeclarations,
+                dlgCheckResult: dlgCheckResult
             )
         }
 
@@ -122,7 +125,8 @@ struct LabelingCheckService {
             databaseInfo: dbInfo,
             ocrText: ocrText,
             imageItems: imageItems,
-            additiveDeclarations: additiveDeclarations.isEmpty ? nil : additiveDeclarations
+            additiveDeclarations: additiveDeclarations.isEmpty ? nil : additiveDeclarations,
+            dlgCheckResult: dlgCheckResult
         )
     }
 

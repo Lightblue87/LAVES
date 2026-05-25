@@ -670,7 +670,8 @@ final class LabelingControlComparisonServiceTests: XCTestCase {
             databaseInfo: nil,
             ocrText: "test",
             imageItems: nil,
-            additiveDeclarations: nil
+            additiveDeclarations: nil,
+            dlgCheckResult: nil
         )
         XCTAssertEqual(result.feedType.id, "pet_feed")
         XCTAssertNil(result.additiveDeclarations)
@@ -706,7 +707,8 @@ final class LabelingControlComparisonServiceTests: XCTestCase {
             databaseInfo: nil,
             ocrText: "",
             imageItems: nil,
-            additiveDeclarations: nil
+            additiveDeclarations: nil,
+            dlgCheckResult: nil
         )
     }
 
@@ -767,7 +769,8 @@ final class LabelingControlComparisonServiceTests: XCTestCase {
             databaseInfo: nil,
             ocrText: "",
             imageItems: items,
-            additiveDeclarations: nil
+            additiveDeclarations: nil,
+            dlgCheckResult: nil
         )
     }
 
@@ -814,7 +817,8 @@ final class LabelingControlComparisonServiceTests: XCTestCase {
             imageItems: [
                 OCRImageItem(id: UUID(), imageType: .vorderseite, thumbnailFileName: nil, ocrText: "test"),
             ],
-            additiveDeclarations: nil
+            additiveDeclarations: nil,
+            dlgCheckResult: nil
         )
     }
 }

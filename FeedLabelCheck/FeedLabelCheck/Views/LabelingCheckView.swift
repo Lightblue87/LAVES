@@ -556,6 +556,16 @@ struct LabelingCheckView: View {
             additives: additiveStore.additives
         )
 
+        // DLG Positivliste: manuell ausgewählten Eintrag verwenden oder automatisch erkennen
+        let dlgMaterial = selectedDlgEntry
+            ?? FeedMaterialLookupService.findBestDlgMatch(
+                for: mergedText,
+                in: labelingStore.dlgFeedMaterials
+            )
+        let dlgResult = dlgMaterial.map {
+            DlgLabelingCheckService.check(ocrText: mergedText, material: $0)
+        }
+
         let result = LabelingCheckService.check(
             ocrText: mergedText,
             feedType: feedType,
@@ -565,7 +575,8 @@ struct LabelingCheckView: View {
             forcedNotCheckableRulePrefixes: notCheckablePrefixes,
             imageItems: entry.imageItems,
             detectedSpeciesHints: entry.analysisResult?.detectedSpeciesHints ?? [],
-            additiveDeclarations: declarations
+            additiveDeclarations: declarations,
+            dlgCheckResult: dlgResult
         )
         checkResult = result
         isResultPresented = true
