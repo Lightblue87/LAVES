@@ -18,25 +18,44 @@ struct AdditiveDeclarationParser {
     // MARK: - Section headers (longest first to avoid sub-string shadowing)
 
     private static let sectionHeaders: [String] = [
+        // German — with "/kg" suffix variant common on multi-language EU labels
+        // e.g. "Zusatzstoffe: Ernährungsphysiologische Zusatzstoffe/kg: Vitamin A …"
+        "Ernährungsphysiologische Zusatzstoffe/kg",
         "Ernährungsphysiologische Zusatzstoffe",
+        "Zootechnische Zusatzstoffe/kg",
         "Zootechnische Zusatzstoffe",
+        "Technologische Zusatzstoffe/kg",
         "Technologische Zusatzstoffe",
+        "Sensorische Zusatzstoffe/kg",
         "Sensorische Zusatzstoffe",
         "Zusatzstoff(e):",
+        "Zusatzstoffe/kg:",
         "Zusatzstoffe:",
         "Zusatzstoffe",
         "Zusatzstoff:",
         "Zusatzstoff",
+        // English — IAMS Naturally uses "Additives per kg:", Felix uses "additives"
+        "nutritional additives",
+        "zootechnical additives",
+        "technological additives",
+        "sensory additives",
+        "additives per kg:",
+        "additives per kg",
+        "additives:",
     ]
 
     // MARK: - Analytical-constituent exclusion list
     // Substances that must NOT be treated as Zusatzstoffe declarations
     // (they appear in the "Analytische Bestandteile" section).
     private static let analyticalPrefixes: [String] = [
-        "rohprotein", "rohfett", "rohfaser", "rohasche", "feuchtigkeit",
+        "rohprotein", "rohfett", "rohfaser", "rohasche",
+        "feuchtegehalt", "feuchtigkeit", "feuchte",
         "natrium", "phosphor", "stärke", "zucker", "kalium", "chlorid",
+        "linolsaure", "linolsäure",
         "crude protein", "crude fat", "crude fibre", "crude ash", "moisture",
         "metabolisierbare", "umsetzbare",
+        // Omega-fatty acids (appear in Analytische Bestandteile, not Zusatzstoffe)
+        "omega",
     ]
 
     // MARK: - Compiled patterns (built once)
@@ -46,10 +65,13 @@ struct AdditiveDeclarationParser {
         // Name: capital-start word ≥3 chars, optionally followed by 1 more word
         //       (handles "Vitamin A", "Vitamin D3", single words like "Taurin")
         // Amount: digit followed by up to 9 more digits/separators/spaces
-        // Unit: all recognised units
+        // Unit: explicit per-kg units OR bare units when /kg is in the section header
+        //       Bare mg/IE/IU/µg/g are common on multi-language EU labels where the
+        //       section header already contains "/kg" (e.g. "Zusatzstoffe/kg: Taurin 570mg")
+        //       Longer forms come first to avoid "mg" matching inside "mg/kg".
         let nameGroup = #"([A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß\-]{2,}(?:\s+[A-Za-zÄÖÜäöüß0-9][A-Za-zÄÖÜäöüß0-9\-]*)?)"#
         let amountGroup = #"(\d[\d\.,\s]{0,9})"#
-        let unitGroup   = #"(mg/kg|g/kg|IE/kg|IU/kg|KBE/kg|CFU/kg|µg/kg|mg/l|%)"#
+        let unitGroup   = #"(mg/kg|g/kg|IE/kg|IU/kg|KBE/kg|CFU/kg|µg/kg|mg/l|%|mg|IE|IU|µg)"#
         let pattern = nameGroup + #"\s+"# + amountGroup + #"\s*"# + unitGroup
         return try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
     }()

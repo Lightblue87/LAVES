@@ -23,6 +23,34 @@ final class ScanArchitectureTests: XCTestCase {
         ScanAnalysisService.analyze(mergedText: text, imageItems: items, feedTypes: [])
     }
 
+    private var feedTypes: [LabelingFeedType] {
+        [
+            LabelingFeedType(
+                id: "complete_feed",
+                nameDe: "Alleinfuttermittel",
+                descriptionDe: nil,
+                keywordsDe: [
+                    "Alleinfuttermittel",
+                    "complete pet food",
+                    "complete feed",
+                    "aliment complet"
+                ]
+            ),
+            LabelingFeedType(
+                id: "complementary_feed",
+                nameDe: "Ergänzungsfuttermittel",
+                descriptionDe: nil,
+                keywordsDe: [
+                    "Ergänzungsfuttermittel",
+                    "complementary pet food",
+                    "complementary feed",
+                    "aliment complémentaire",
+                    "alimento complementare"
+                ]
+            )
+        ]
+    }
+
     // MARK: - Labeling area detection
 
     func testCompositionKeywordDetected() {
@@ -81,6 +109,93 @@ final class ScanArchitectureTests: XCTestCase {
         let text = "E 306 enthält natürliches Vitamin E"
         let result = analyze(text: text)
         XCTAssertTrue(result.additiveHints.hasENumbers)
+    }
+
+    // MARK: - Real label OCR snippets added 2026-05-25
+
+    func testTodayLoftysRodentSnackSnippetDetectsNagerAndComplementaryFeed() {
+        let text = """
+        Light and airy baked crispy pillows with essential oats and timothy hay.
+        A treat for all rodents!
+        Ergänzungsiutiemitict Nager. Zusammensetzung: Hafermehl 35%, Weizenmehl,
+        Timothy Heu 10%. Mindestens haltbar bis/Partienummer: Siehe Stempel.
+        Aliment complémentaire pour rongeurs.
+        """
+
+        let result = ScanAnalysisService.analyze(mergedText: text, imageItems: nil, feedTypes: feedTypes)
+
+        XCTAssertEqual(result.detectedFeedTypeId, "complementary_feed")
+        XCTAssertTrue(result.detectedSpeciesHints.contains("Nager"))
+        XCTAssertTrue(result.labelingAreas.hasComposition)
+        XCTAssertTrue(result.labelingAreas.hasBestBefore)
+        XCTAssertTrue(result.labelingAreas.hasLotNumber)
+    }
+
+    func testTodayEdekaMuckelSnippetDetectsRabbitGuineaPigCompleteFeedAndNetQuantity() {
+        let text = """
+        Alleinfuttermittel für Zwergkaninchen und Meerschweinchen
+        Zusammensetzung: Gras getrocknet, 9,1 % Luzerne getrocknet,
+        Analytische Bestandteile: Rohprotein 11,2 %, Rohfett 2,1 %, Rohfaser 20,0 %.
+        Zusatzstoffe: Ernährungsphysiologische Zusatzstoffe/kg: Vitamin A 12000 IE.
+        600g e
+        """
+
+        let result = ScanAnalysisService.analyze(mergedText: text, imageItems: nil, feedTypes: feedTypes)
+
+        XCTAssertEqual(result.detectedFeedTypeId, "complete_feed")
+        XCTAssertTrue(result.detectedSpeciesHints.contains("Kaninchen"))
+        XCTAssertTrue(result.detectedSpeciesHints.contains("Meerschweinchen"))
+        XCTAssertTrue(result.labelingAreas.hasComposition)
+        XCTAssertTrue(result.labelingAreas.hasAnalyticalConstituents)
+        XCTAssertTrue(result.labelingAreas.hasAdditives)
+        XCTAssertTrue(result.labelingAreas.hasNetQuantity)
+    }
+
+    func testTodayDokasCatSnackSnippetKeepsChickenAsIngredientNotPoultrySpecies() {
+        let text = """
+        FREEZE-DRIED CHICKEN HEARTS
+        DE Ergänzungsfuttermittel für Katzen - Zusammensetzung: 99,5 % Hühnerherz.
+        Analytische Bestandteile: Rohprotein 73,8 %, Rohfett 14,0 %.
+        """
+
+        let result = ScanAnalysisService.analyze(mergedText: text, imageItems: nil, feedTypes: feedTypes)
+
+        XCTAssertEqual(result.detectedFeedTypeId, "complementary_feed")
+        XCTAssertTrue(result.detectedSpeciesHints.contains("Katze"))
+        XCTAssertFalse(result.detectedSpeciesHints.contains("Geflügel"))
+    }
+
+    func testTodayMediPetDietSnippetDetectsDogAndCompleteFeed() {
+        let text = """
+        Medi Pet+ Schonkost, Huhn mit Steckrübe.
+        Diät-Alleinfuttermittel für ausgewachsene Hunde zur Minderung von
+        Ausgangserzeugnis- und Nährstoffintoleranzerscheinungen.
+        Zusammensetzung: Fleisch und tierische Nebenerzeugnisse (60% Huhn).
+        FÜTTERUNGSEMPFEHLUNG
+        """
+
+        let result = ScanAnalysisService.analyze(mergedText: text, imageItems: nil, feedTypes: feedTypes)
+
+        XCTAssertEqual(result.detectedFeedTypeId, "complete_feed")
+        XCTAssertTrue(result.detectedSpeciesHints.contains("Hund"))
+        XCTAssertFalse(result.detectedSpeciesHints.contains("Geflügel"))
+        XCTAssertTrue(result.labelingAreas.hasComposition)
+    }
+
+    func testTodayIamsSnippetDetectsCatFromMultilingualText() {
+        let text = """
+        WITH CHICKEN AND NEW ZEALAND LAMB IN GRAVY
+        mit HUHN UND NEUSEELAND-LAMM IN SAUCE
+        1+ Adult Ausgewachsene Katzen
+        IAMS NATURALLY 100% complete nutrition
+        """
+
+        let result = ScanAnalysisService.analyze(mergedText: text, imageItems: nil, feedTypes: feedTypes)
+
+        XCTAssertEqual(result.detectedFeedTypeId, "complete_feed")
+        XCTAssertTrue(result.detectedSpeciesHints.contains("Katze"))
+        XCTAssertFalse(result.detectedSpeciesHints.contains("Geflügel"))
+        XCTAssertFalse(result.detectedSpeciesHints.contains("Schaf"))
     }
 
     // MARK: - Image coverage

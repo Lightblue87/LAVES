@@ -63,7 +63,7 @@ struct LabelingFeedTypeDetector {
     }
 
     private func matchedKeywords(for feedType: LabelingFeedType, in normalized: String) -> [String] {
-        feedType.keywordsDe.filter { keyword in
+        expandedKeywords(for: feedType).filter { keyword in
             let nk = normalize(keyword)
             guard !nk.isEmpty else { return false }
             if directLegalTerms.contains(nk) {
@@ -71,6 +71,32 @@ struct LabelingFeedTypeDetector {
             }
             return normalized.contains(nk)
         }
+    }
+
+    private func expandedKeywords(for feedType: LabelingFeedType) -> [String] {
+        var keywords = feedType.keywordsDe
+        switch feedType.id {
+        case "complete_feed":
+            keywords += [
+                "Diät-Alleinfuttermittel",
+                "Diaet-Alleinfuttermittel",
+                "Diät Alleinfuttermittel",
+                "complete nutrition",
+                "100% complete nutrition"
+            ]
+        case "complementary_feed":
+            keywords += [
+                "Ergänzungsfutermittel",
+                "Ergaenzungsfutermittel",
+                "Ergänzungsfuttermitel",
+                "Ergaenzungsfuttermitel",
+                "Aliment complémentaire",
+                "Alimento complementare"
+            ]
+        default:
+            break
+        }
+        return keywords
     }
 
     private func keywordScore(_ keyword: String, feedTypeId: String) -> Double {
@@ -103,8 +129,14 @@ struct LabelingFeedTypeDetector {
             "alleinfuttermittel",
             "allein-futtermittel",
             "alleinfutter",
+            "diat alleinfuttermittel",
+            "diaet alleinfuttermittel",
             "erganzungsfuttermittel",
             "ergaenzungsfuttermittel",
+            "erganzungsfutermittel",
+            "ergaenzungsfutermittel",
+            "erganzungsfuttermitel",
+            "ergaenzungsfuttermitel",
             "erganzungsfutter",
             "mineralfuttermittel",
             "mineral-futtermittel",
