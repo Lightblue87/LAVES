@@ -95,11 +95,11 @@ struct ScanAnalysisService {
             "best before", "verwendbar bis", "haltbar bis", "ten minste houdbaar"
         ])
         let hasLot = kw([
-            "Charge:", "Losnummer", "Chargennummer", "LOT", "Los:", "Partie:",
+            "Charge:", "Chargen", "Losnummer", "Chargennummer", "LOT", "Los:", "Partie:",
             "Partienummer", "Bezugsnummer der Partie",
             "lot number", "batch number", "numéro de lot"
         ]) || text.range(
-            of: #"\b(LOT|L|Charge|Chargen-Nr\.?|Chargennummer|Los|Losnummer|Los-Nr\.?|Partie|Partienummer|Partie-Nr\.?|Partie\s+Nr\.?)(?!\w)\s?[:.\-]?\s?[A-Z0-9\-\/]*\d[A-Z0-9\-\/]*\b"#,
+            of: #"\b(LOT|L|Charge|Chargen|Chargen-Nr\.?|Chargennummer|Los|Losnummer|Los-Nr\.?|Partie|Partienummer|Partie-Nr\.?|Partie\s+Nr\.?)(?!\w)\s*[:.\-]?\s*[A-Z0-9\-\/]*\d[A-Z0-9\-\/]*\b"#,
             options: [.regularExpression, .caseInsensitive]
         ) != nil
         let hasNetQty = kw([

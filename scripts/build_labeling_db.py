@@ -1350,7 +1350,7 @@ def _build_patterns() -> list[tuple]:
     # Only the regex (which requires an actual alphanumeric code) → found (1.0)
     # Keywords: section labels → probablyFound (0.7)
     rows += _kw("art15_004", [
-        "Charge:", "Los:", "Partie:", "Chargennr", "Losnr", "Partienr",
+        "Charge:", "Chargen", "Los:", "Partie:", "Chargennr", "Losnr", "Partienr",
         "Chargenangabe:", "Kennnummer der Partie", "Losnummer:", "Chargennummer:",
         # Additional real-world variants (proCani, generic EU labels)
         "Zulassungsnummer der Partie",
@@ -1382,7 +1382,7 @@ def _build_patterns() -> list[tuple]:
     #   Covers "Zulassungsnummer der Partie: BAF 1015090925"
     #   Requires at least 4 digits to distinguish from "siehe Boden-Aufdruck" (no digits)
     rows += _rx("art15_004", [
-        r"\b(LOT|L|Charge|Chargen-Nr\.?|Chargennummer|Los|Losnummer|Los-Nr\.?|Partie|Partienummer|Partie-Nr\.?|Partie\s+Nr\.?)(?!\w)\s?[:\-]?\s?[A-Z0-9\-\/]*\d[A-Z0-9\-\/]*\b",
+        r"\b(LOT|L|Charge|Chargen|Chargen-Nr\.?|Chargennummer|Los|Losnummer|Los-Nr\.?|Partie|Partienummer|Partie-Nr\.?|Partie\s+Nr\.?)(?!\w)\s*[:\-]?\s*[A-Z0-9\-\/]*\d[A-Z0-9\-\/]*\b",
         r"\b(?:Zulassungsnummer|Kennnummer)\s+der\s+Partie\s*[:\-]?\s*"
         r"[A-Z]{1,5}\s*\d{4,}[A-Z0-9]*\b",
     ])

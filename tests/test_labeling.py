@@ -108,7 +108,7 @@ class TestFeedTypeDetection:
 LOT_PATTERNS = [
     # 1. Standard short keyword + compact code (at least one digit required)
     #    (?!\w) prevents matching inside compound words (e.g. "Chargenangabe")
-    r"\b(LOT|L|Charge|Chargen-Nr\.?|Chargennummer|Los|Losnummer|Los-Nr\.?|Partie|Partienummer|Partie-Nr\.?|Partie\s+Nr\.?)(?!\w)\s?[:\-]?\s?[A-Z0-9\-\/]*\d[A-Z0-9\-\/]*\b",
+    r"\b(LOT|L|Charge|Chargen|Chargen-Nr\.?|Chargennummer|Los|Losnummer|Los-Nr\.?|Partie|Partienummer|Partie-Nr\.?|Partie\s+Nr\.?)(?!\w)\s*[:\-]?\s*[A-Z0-9\-\/]*\d[A-Z0-9\-\/]*\b",
     # 2. Long-form labels: Zulassungsnummer / Kennnummer der Partie + space-separated code
     #    Requires ≥4 digits → prevents matching "siehe Boden-Aufdruck" (no digits)
     r"\b(?:Zulassungsnummer|Kennnummer)\s+der\s+Partie\s*[:\-]?\s*[A-Z]{1,5}\s*\d{4,}[A-Z0-9]*\b",
@@ -129,6 +129,7 @@ class TestLotNumberPattern:
             ("Partienummer 2806088", True),
             ("Chargen-Nr. 20240501-001", True),
             ("Chargennummer: 01102000040327", True),
+            ("Chargen\n01102000040327", True),
             ("Los: 4567", True),
             ("Los Nr. und MHD Ende: siehe Aufdruck", False),
             # "Chargenangabe" is a compound word — "Charge" has no \b after it here.
@@ -795,6 +796,10 @@ class TestPatternQuality:
     def test_lot_concrete_code_regex_found(self) -> None:
         """'Charge: A2024-09-01' must produce a regex match → found."""
         assert self._regex_match("art15_004", "Charge: A2024-09-01")
+
+    def test_lot_ocr_truncated_chargen_heading_regex_found(self) -> None:
+        """Vision may read 'Chargennummer:' as 'Chargen' with the code on the next line."""
+        assert self._regex_match("art15_004", "Chargen\n01102000040327")
 
     def test_lot_lot_number_regex_found(self) -> None:
         assert self._regex_match("art15_004", "LOT 20240901A")

@@ -304,6 +304,24 @@ final class ScanArchitectureTests: XCTestCase {
         XCTAssertTrue(result.labelingAreas.hasNetQuantity)
     }
 
+    func testAlpengruenMashDetectsTruncatedChargenHeadingAsLotNumber() {
+        let text = """
+        AlpenGrün Mash
+        Ergänzungsfuttermittel für Pferde
+        Chargen
+        01102000040327
+        Mindestens haltbar bis:
+        04.09.2026
+        5kg
+        """
+
+        let result = ScanAnalysisService.analyze(mergedText: text, imageItems: nil, feedTypes: feedTypes)
+
+        XCTAssertTrue(result.labelingAreas.hasLotNumber)
+        XCTAssertTrue(result.labelingAreas.hasBestBefore)
+        XCTAssertTrue(result.labelingAreas.hasNetQuantity)
+    }
+
     // MARK: - Image coverage
 
     func testSingleImageSessionCoverage() {
