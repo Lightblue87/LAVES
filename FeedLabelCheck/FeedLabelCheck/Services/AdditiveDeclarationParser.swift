@@ -102,26 +102,63 @@ struct AdditiveDeclarationParser {
     ///   - text:      The (merged, deduplicated) OCR text from the label.
     ///   - additives: Loaded additive database entries for DB matching.
     ///   - config:    Optional DB-driven parser config; falls back to built-in defaults when nil.
-    /// - Returns: Parsed and DB-matched declarations, deduplicated by substance name.
+    /// - Returns: Parsed and DB-matched declarations, deduplicated by substance name **and**
+    ///            E-number. E-numbers are treated as fallback: when the same substance was
+    ///            already found by its chemical/common name (e.g. "Vitamin E" → E306),
+    ///            the redundant E-number entry is suppressed.
     static func parse(text: String, additives: [Additive], config: AdditiveParserConfig? = nil) -> [AdditiveDeclaration] {
         let rawEntries = extractRawEntries(from: text, config: config)
         guard !rawEntries.isEmpty else { return [] }
 
-        // Deduplicate by normalised substance name
+        // Pass 1 — deduplicate by normalised substance name, run DB matching
         var seen = Set<String>()
-        return rawEntries.compactMap { entry in
+        var all: [AdditiveDeclaration] = []
+        for entry in rawEntries {
             let key = entry.name.lowercased().trimmingCharacters(in: .whitespaces)
-            guard seen.insert(key).inserted else { return nil }
+            guard seen.insert(key).inserted else { continue }
             let (confidence, matched) = matchToDatabase(substanceName: entry.name,
                                                         additives: additives)
-            return AdditiveDeclaration(
+            all.append(AdditiveDeclaration(
                 substanceName: entry.name,
                 amount: entry.amount,
                 rawText: entry.rawText,
                 confidence: confidence,
                 matchedAdditive: matched
-            )
+            ))
         }
+
+        // Pass 2 — suppress redundant E-number entries.
+        // E-numbers are the historical/fallback designation. If the same substance was
+        // already captured under its chemical name (e.g. "Vitamin E" matched to E306
+        // in the DB), the bare "E306" entry is dropped to avoid duplicates.
+        let coveredENumbers: Set<String> = Set(
+            all.compactMap { decl -> String? in
+                guard !looksLikeENumber(decl.substanceName) else { return nil }
+                guard let eNum = decl.matchedAdditive?.eNumber, !eNum.isEmpty else { return nil }
+                return normalizeENumber(eNum)
+            }
+        )
+        guard !coveredENumbers.isEmpty else { return all }
+
+        return all.filter { decl in
+            guard looksLikeENumber(decl.substanceName) else { return true }
+            return !coveredENumbers.contains(normalizeENumber(decl.substanceName))
+        }
+    }
+
+    // MARK: - E-number helpers
+
+    /// Returns true when `name` looks like a standalone E-number (e.g. "E306", "E 300", "E160a").
+    /// Internal (not private) so it can be tested directly.
+    static func looksLikeENumber(_ name: String) -> Bool {
+        let n = name.uppercased().replacingOccurrences(of: " ", with: "")
+        guard n.hasPrefix("E"), n.count >= 4 else { return false }
+        return n.dropFirst().prefix(3).allSatisfy(\.isNumber)
+    }
+
+    /// Normalises an E-number to a canonical uppercase no-space form ("E 306" → "E306").
+    static func normalizeENumber(_ raw: String) -> String {
+        raw.uppercased().replacingOccurrences(of: " ", with: "")
     }
 
     // MARK: - Raw entry extraction

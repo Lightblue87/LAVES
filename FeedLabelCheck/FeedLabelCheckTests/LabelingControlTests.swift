@@ -869,4 +869,42 @@ final class AdditiveDeclarationParserTests: XCTestCase {
         XCTAssertFalse(declarations.isEmpty)
         XCTAssertEqual(declarations.first?.amount?.unit, "mg/kg")
     }
+
+    // E-number suppression: when a named entry matches an E-number in the DB,
+    // the bare E-number entry must be dropped to avoid duplicates.
+    func testENumberSuppressedWhenNameFoundInDB() {
+        // Build a minimal mock DB: Taurin = E999 (fictitious E-number for testing)
+        let mockAdditive = Additive(
+            eNumber: "E999",
+            name: "Taurin",
+            species: "Alle Tierarten",
+            maxAgeDays: nil,
+            minMgKg: nil,
+            maxMgKg: nil,
+            unit: nil,
+            regulation: nil,
+            sourceFile: nil,
+            sourcePage: nil,
+            animalCategory: nil
+        )
+        // Label declares both the name and the E-number
+        let text = "Zusatzstoffe: Taurin 570 mg/kg, E 999 570 mg/kg"
+        let declarations = AdditiveDeclarationParser.parse(text: text, additives: [mockAdditive])
+
+        // Only "Taurin" should appear; "E999" must be suppressed
+        XCTAssertEqual(declarations.count, 1,
+                       "E-number entry must be suppressed when the same substance was found by name")
+        XCTAssertEqual(declarations.first?.substanceName, "Taurin")
+    }
+
+    // E-number must be kept when no named entry exists for it
+    func testENumberKeptWhenNoNameFound() {
+        // No DB → no suppression possible
+        let text = "Zusatzstoffe: E 306 200 mg/kg"
+        let declarations = AdditiveDeclarationParser.parse(text: text, additives: [])
+        XCTAssertFalse(declarations.isEmpty, "E-number entry must be kept when no name is found")
+        XCTAssertTrue(AdditiveDeclarationParser.looksLikeENumber("E306"))
+        XCTAssertTrue(AdditiveDeclarationParser.looksLikeENumber("E 300"))
+        XCTAssertFalse(AdditiveDeclarationParser.looksLikeENumber("Taurin"))
+    }
 }
