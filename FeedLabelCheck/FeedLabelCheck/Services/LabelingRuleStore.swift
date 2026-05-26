@@ -6,6 +6,7 @@ final class LabelingRuleStore: ObservableObject {
     @Published private(set) var feedTypes: [LabelingFeedType] = []
     @Published private(set) var feedMaterials: [FeedMaterial] = []
     @Published private(set) var dlgFeedMaterials: [DlgFeedMaterial] = []
+    @Published private(set) var additiveParserConfig: AdditiveParserConfig?
     @Published private(set) var isLoaded = false
     @Published private(set) var loadError: String?
     @Published private(set) var dbInfo: LabelingDatabaseInfo?
@@ -49,6 +50,7 @@ final class LabelingRuleStore: ObservableObject {
             feedTypes = try repository.loadFeedTypes(from: url)
             feedMaterials = try repository.loadFeedMaterials(from: url)
             dlgFeedMaterials = try repository.loadDlgFeedMaterials(from: url)
+            additiveParserConfig = try? repository.loadAdditiveParserConfig(from: url)
             dbInfo = try repository.loadDatabaseInfo(from: url)
             loadError = nil
             isLoaded = true
@@ -126,6 +128,7 @@ final class LabelingRuleStore: ObservableObject {
             feedTypes = try repository.loadFeedTypes(from: localDatabaseURL)
             feedMaterials = try repository.loadFeedMaterials(from: localDatabaseURL)
             dlgFeedMaterials = try repository.loadDlgFeedMaterials(from: localDatabaseURL)
+            additiveParserConfig = try? repository.loadAdditiveParserConfig(from: localDatabaseURL)
             dbInfo = try repository.loadDatabaseInfo(from: localDatabaseURL)
             defaults.set(manifest.sha256, forKey: shaKey)
             updateAvailable = false

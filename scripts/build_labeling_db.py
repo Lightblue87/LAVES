@@ -89,6 +89,18 @@ CREATE TABLE IF NOT EXISTS labeling_rule_examples (
 CREATE TABLE IF NOT EXISTS labeling_metadata (
     key TEXT PRIMARY KEY, value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS additive_section_headers (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    header     TEXT    NOT NULL,
+    lang       TEXT    NOT NULL DEFAULT 'multi',
+    sort_order INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS additive_exclusions (
+    id     INTEGER PRIMARY KEY AUTOINCREMENT,
+    prefix TEXT NOT NULL
+);
 """
 
 # ---------------------------------------------------------------------------
@@ -128,7 +140,9 @@ FEED_TYPES = [
         "Mischfuttermittel für vollständige Ernährung",
         (
             "Alleinfuttermittel,Allein-Futtermittel,Alleinfutter,Alleinfutter für,"
-            "complete pet food,complete feed,alimento completo,aliment complet,volledig diervoeder"
+            "complete pet food,complete feed,alimento completo,aliment complet,volledig diervoeder,"
+            "Diät-Alleinfuttermittel,Diaet-Alleinfuttermittel,Diät Alleinfuttermittel,"
+            "complete nutrition,100% complete nutrition"
         ),
     ),
     (
@@ -138,6 +152,7 @@ FEED_TYPES = [
         (
             "Ergänzungsfuttermittel,Ergaenzungsfuttermittel,Ergänzungsfutter,"
             "Ergänzungsfutermittel,Ergaenzungsfutermittel,Ergänzungsfuttermitel,"
+            "Ergaenzungsfuttermitel,"
             "complementary pet food,complementary feed,alimento complementare,aliment complémentaire,"
             "aanvullend diervoeder"
         ),
@@ -175,6 +190,62 @@ FEED_TYPES = [
         "Futtermittelart nicht erkennbar",
         "",
     ),
+]
+
+# ---------------------------------------------------------------------------
+# Additive parser config data
+# ---------------------------------------------------------------------------
+
+# (header, lang, sort_order) — longest/most specific first (lower sort_order = higher priority)
+ADDITIVE_SECTION_HEADERS: list[tuple[str, str, int]] = [
+    ("Ernährungsphysiologische Zusatzstoffe/kg", "de", 0),
+    ("Ernährungsphysiologische Zusatzstoffe", "de", 1),
+    ("Zootechnische Zusatzstoffe/kg", "de", 2),
+    ("Zootechnische Zusatzstoffe", "de", 3),
+    ("Technologische Zusatzstoffe/kg", "de", 4),
+    ("Technologische Zusatzstoffe", "de", 5),
+    ("Sensorische Zusatzstoffe/kg", "de", 6),
+    ("Sensorische Zusatzstoffe", "de", 7),
+    ("Zusatzstoff(e):", "de", 8),
+    ("Zusatzstoffe/kg:", "de", 9),
+    ("Zusatzstoffe:", "de", 10),
+    ("Zusatzstoffe", "de", 11),
+    ("Zusatzstoff:", "de", 12),
+    ("Zusatzstoff", "de", 13),
+    ("nutritional additives", "en", 14),
+    ("zootechnical additives", "en", 15),
+    ("technological additives", "en", 16),
+    ("sensory additives", "en", 17),
+    ("additives per kg:", "en", 18),
+    ("additives per kg", "en", 19),
+    ("additives:", "en", 20),
+]
+
+# Prefixes of analytical constituents that must NOT be treated as Zusatzstoffe
+ADDITIVE_EXCLUSION_PREFIXES: list[str] = [
+    "rohprotein",
+    "rohfett",
+    "rohfaser",
+    "rohasche",
+    "feuchtegehalt",
+    "feuchtigkeit",
+    "feuchte",
+    "natrium",
+    "phosphor",
+    "stärke",
+    "zucker",
+    "kalium",
+    "chlorid",
+    "linolsaure",
+    "linolsäure",
+    "crude protein",
+    "crude fat",
+    "crude fibre",
+    "crude ash",
+    "moisture",
+    "metabolisierbare",
+    "umsetzbare",
+    "omega",
 ]
 
 # ---------------------------------------------------------------------------
@@ -1746,9 +1817,21 @@ def build(out_path: Path, dlg_pdf_path: Path | None = None) -> int:
         )
     dlg_count = len(dlg_rows)
 
+    # --- additive_section_headers ---
+    con.executemany(
+        "INSERT INTO additive_section_headers (header, lang, sort_order) VALUES (?, ?, ?)",
+        ADDITIVE_SECTION_HEADERS,
+    )
+
+    # --- additive_exclusions ---
+    con.executemany(
+        "INSERT INTO additive_exclusions (prefix) VALUES (?)",
+        [(p,) for p in ADDITIVE_EXCLUSION_PREFIXES],
+    )
+
     # --- labeling_metadata (initial, without sha256) ---
     metadata_initial = [
-        ("labeling_db_version", "2026-05-25"),
+        ("labeling_db_version", "2026-05-26"),
         ("labeling_source_regulation", "VO (EG) Nr. 767/2009"),
         ("labeling_source_celex", "02009R0767-20181226"),
         ("labeling_source_version_date", "2018-12-26"),

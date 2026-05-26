@@ -553,7 +553,8 @@ struct LabelingCheckView: View {
         // Parse structured additive declarations (offline, no network)
         let declarations = AdditiveDeclarationParser.parse(
             text: mergedText,
-            additives: additiveStore.additives
+            additives: additiveStore.additives,
+            config: labelingStore.additiveParserConfig
         )
 
         // DLG Positivliste: manuell ausgewählten Eintrag verwenden oder automatisch erkennen
