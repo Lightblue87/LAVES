@@ -1361,10 +1361,14 @@ def _build_patterns() -> list[tuple]:
         "Los-Nr.",
         "LOT:",        # EU label field label with colon — avoids substring false-positives
                        # (bare "LOT" would hit "Pilotversuch"; regex handles "LOT A123…")
+        # Combined LOT+MHD redirect phrases — whole phrase present → label present (imprint redirect)
+        "Los Nr. und MHD Ende",  # "Los Nr. und MHD Ende: siehe Aufdruck" (Galopp Broncholyx)
     ], weight=0.7)
     rows += _kw("art15_004", [
         "Reference number", "batch number", "lot number", "Batch:", "Lot:",
         "Batch No.",
+        # Combined LOT+MHD redirect phrases (EN)
+        "Lot no. and expiry date",  # "Lot no. and expiry date: see imprint"
     ], weight=0.7, language="en")
     rows += _kw("art15_004", [
         "numero di riferimento", "numero di lotto", "numéro de lot",
@@ -1471,6 +1475,8 @@ def _build_patterns() -> list[tuple]:
         "haltbar bis",
         "Verbrauch bis",
         "zu verbrauchen bis",
+        # Combined LOT+MHD imprint-redirect phrase — MHD is declared (on imprint)
+        "Los Nr. und MHD Ende",  # "Los Nr. und MHD Ende: siehe Aufdruck" (Galopp Broncholyx)
     ]
     _mhd_kw_en = [
         "best before",
@@ -1480,6 +1486,8 @@ def _build_patterns() -> list[tuple]:
         "expiration date",
         "EXP:",   # "EXP:" (with colon) is specific enough as keyword
         "BBE",    # Best Before End — common on UK/EU products
+        # Combined LOT+MHD imprint-redirect phrase (EN)
+        "Lot no. and expiry date",  # "Lot no. and expiry date: see imprint"
     ]
     _mhd_kw_other = [
         "da consumarsi preferibilmente entro",

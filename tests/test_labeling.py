@@ -1027,6 +1027,56 @@ class TestRealWorldPackagingPatterns:
         )
         assert not self._regex_match("art15_004", text)
 
+    # ------------------------------------------------------------------
+    # Case 5 — Galopp Broncholyx combined LOT+MHD imprint redirect
+    # "Los Nr. und MHD Ende: siehe Aufdruck"
+    # Both LOT and MHD are declared via redirect to the imprint.
+    # Expected: keyword match for BOTH rules (probablyFound);
+    #           NO regex match (no concrete code or date present).
+    # ------------------------------------------------------------------
+
+    def test_case5_galopp_lot_redirect_keyword_match(self) -> None:
+        """'Los Nr. und MHD Ende' keyword must match art15_004 (LOT rule)."""
+        text = "Los Nr. und MHD Ende: siehe Aufdruck"
+        assert self._keyword_match("art15_004", text), (
+            "'Los Nr. und MHD Ende' must keyword-match art15_004"
+        )
+
+    def test_case5_galopp_lot_redirect_no_regex(self) -> None:
+        """No concrete lot code present → no regex match for art15_004."""
+        text = "Los Nr. und MHD Ende: siehe Aufdruck"
+        assert not self._regex_match("art15_004", text), (
+            "Combined redirect phrase without code must NOT regex-match art15_004"
+        )
+
+    def test_case5_galopp_mhd_redirect_keyword_match(self) -> None:
+        """'Los Nr. und MHD Ende' keyword must match the MHD rule (probablyFound)."""
+        text = "Los Nr. und MHD Ende: siehe Aufdruck"
+        assert self._keyword_match(self._MHD_RULE, text), (
+            "'Los Nr. und MHD Ende' must keyword-match the MHD rule"
+        )
+
+    def test_case5_galopp_mhd_redirect_no_regex(self) -> None:
+        """No concrete date present → no regex match for MHD rule."""
+        text = "Los Nr. und MHD Ende: siehe Aufdruck"
+        assert not self._regex_match(self._MHD_RULE, text), (
+            "Combined redirect phrase without date must NOT regex-match MHD rule"
+        )
+
+    def test_case5_en_lot_redirect_keyword_match(self) -> None:
+        """'Lot no. and expiry date' keyword must match art15_004 (LOT rule, EN)."""
+        text = "Lot no. and expiry date: see imprint"
+        assert self._keyword_match("art15_004", text), (
+            "'Lot no. and expiry date' must keyword-match art15_004"
+        )
+
+    def test_case5_en_mhd_redirect_keyword_match(self) -> None:
+        """'Lot no. and expiry date' keyword must match the MHD rule (EN, probablyFound)."""
+        text = "Lot no. and expiry date: see imprint"
+        assert self._keyword_match(self._MHD_RULE, text), (
+            "'Lot no. and expiry date' must keyword-match the MHD rule"
+        )
+
     def test_fp_lot_colon_still_matches(self) -> None:
         """'LOT:' (with colon) must still keyword-match art15_004."""
         text = "LOT: s. Aufdruck"
