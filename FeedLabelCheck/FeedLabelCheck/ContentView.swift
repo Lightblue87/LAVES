@@ -78,11 +78,11 @@ struct ContentView: View {
                 .badge(labelingStore.updateAvailable ? 1 : 0)
                 .tag(AppTab.labeling)
 
-            DataStatusView(store: store)
+            DataStatusView(store: store, labelingStore: labelingStore)
                 .tabItem {
                     Label("Daten", systemImage: "arrow.down.circle")
                 }
-                .badge(store.updateAvailable ? 1 : 0)
+                .badge((store.updateAvailable || labelingStore.updateAvailable) ? 1 : 0)
                 .tag(AppTab.data)
         }
     }
