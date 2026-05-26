@@ -98,7 +98,10 @@ struct ScanAnalysisService {
             "Charge:", "Losnummer", "Chargennummer", "LOT", "Los:", "Partie:",
             "Partienummer", "Bezugsnummer der Partie",
             "lot number", "batch number", "numéro de lot"
-        ])
+        ]) || text.range(
+            of: #"\b(LOT|L|Charge|Chargen-Nr\.?|Chargennummer|Los|Losnummer|Los-Nr\.?|Partie|Partienummer|Partie-Nr\.?|Partie\s+Nr\.?)(?!\w)\s?[:.\-]?\s?[A-Z0-9\-\/]*\d[A-Z0-9\-\/]*\b"#,
+            options: [.regularExpression, .caseInsensitive]
+        ) != nil
         let hasNetQty = kw([
             "Nettomasse", "Nettogewicht", "Nettomenge", "Netto",
             "net weight", "net contents", "poids net", "peso netto"

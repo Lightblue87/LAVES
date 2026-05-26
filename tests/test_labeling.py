@@ -66,6 +66,15 @@ class TestFeedTypeDetection:
     def test_complementary_feed_detected(self):
         assert "complementary_feed" in self._detect("Ergänzungsfuttermittel für Schweine")
 
+    def test_raufutterergaenzung_detected(self):
+        assert "complementary_feed" in self._detect("Pavo WeightLift ist eine Raufutterergänzung für Pferde")
+
+    def test_supplementary_feed_detected(self):
+        assert "complementary_feed" in self._detect("Supplementary feed for horses")
+
+    def test_dutch_complementary_feed_detected(self):
+        assert "complementary_feed" in self._detect("Aanvullend diervoeder voor paarden")
+
     def test_single_feed_detected(self):
         assert "single_feed" in self._detect("Einzelfuttermittel: Weizenmehl")
 
@@ -99,7 +108,7 @@ class TestFeedTypeDetection:
 LOT_PATTERNS = [
     # 1. Standard short keyword + compact code (at least one digit required)
     #    (?!\w) prevents matching inside compound words (e.g. "Chargenangabe")
-    r"\b(LOT|L|Charge|Chargen-Nr\.?|Los|Partie)(?!\w)\s?[:\-]?\s?[A-Z0-9\-\/]*\d[A-Z0-9\-\/]*\b",
+    r"\b(LOT|L|Charge|Chargen-Nr\.?|Chargennummer|Los|Losnummer|Los-Nr\.?|Partie|Partienummer|Partie-Nr\.?|Partie\s+Nr\.?)(?!\w)\s?[:\-]?\s?[A-Z0-9\-\/]*\d[A-Z0-9\-\/]*\b",
     # 2. Long-form labels: Zulassungsnummer / Kennnummer der Partie + space-separated code
     #    Requires ≥4 digits → prevents matching "siehe Boden-Aufdruck" (no digits)
     r"\b(?:Zulassungsnummer|Kennnummer)\s+der\s+Partie\s*[:\-]?\s*[A-Z]{1,5}\s*\d{4,}[A-Z0-9]*\b",
@@ -117,8 +126,11 @@ class TestLotNumberPattern:
             ("LOT 20240901A", True),
             ("L: XYZ123", True),
             ("Partie: P2024/05", True),
+            ("Partienummer 2806088", True),
             ("Chargen-Nr. 20240501-001", True),
+            ("Chargennummer: 01102000040327", True),
             ("Los: 4567", True),
+            ("Los Nr. und MHD Ende: siehe Aufdruck", False),
             # "Chargenangabe" is a compound word — "Charge" has no \b after it here.
             # The keyword "Chargenangabe:" at weight 0.7 still gives probablyFound.
             ("Chargenangabe: A2024", False),
@@ -171,8 +183,11 @@ class TestNetQuantityPattern:
 BBD_PATTERNS = [
     # German/general: standard abbreviations + concrete DD.MM.YYYY date
     # Includes "haltbar bis" (without "mindestens") for "-18°C haltbar bis: 09.12.26"
-    r"\b(MHD|BBD|mindestens haltbar bis|haltbar bis|verwendbar bis)"
+    r"\b(MHD|BBD|mindestens haltbar bis|mindesthaltbar bis|haltbar bis|verwendbar bis)"
     r"[:\s]*\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{2,4}\b",
+    # German/general: MM/YYYY without day
+    r"\b(MHD|BBD|mindestens haltbar bis|mindesthaltbar bis|haltbar bis|verwendbar bis)"
+    r"[:\s]*\d{1,2}[\/\-]\d{4}\b",
     # English/international: EXP / BBE + concrete date
     # Covers "EXP: 29.11.2026" and "BBE 01.03.2027"
     r"\b(EXP|BBE|best before|use before|use by|expiry|expiration)"
@@ -181,6 +196,7 @@ BBD_PATTERNS = [
 BBD_KEYWORDS = [
     "Mindesthaltbarkeit",
     "mindestens haltbar bis",
+    "Mindesthaltbar bis",
     "MHD",
     "best before",
     "verwendbar bis",
@@ -197,9 +213,10 @@ class TestBestBeforePattern:
         [
             ("MHD: 31.12.2025", True),
             ("mindestens haltbar bis 31.12.2025", True),
-            # ISO / partial formats not matched by the German-date regex — expected False
+            ("Mindesthaltbar bis: 20.10.2027", True),
+            # ISO format not matched by the German-date regex — expected False
             ("BBD 2025-12-31", False),
-            ("mindestens haltbar bis 01/2026", False),
+            ("mindestens haltbar bis 01/2026", True),
             ("best before 12/2025", False),
             ("Kein Ablaufdatum vorhanden", False),
             # Real-packaging additions (Kennzeichnungen.pdf)
@@ -218,6 +235,7 @@ class TestBestBeforePattern:
             ("Mindesthaltbarkeit: 31.12.2025", True),
             ("MHD 01.06.2026", True),
             ("haltbar bis Ende 2025", True),
+            ("Mindesthaltbar bis: 20.10.2027", True),
             ("Kein Datum angegeben", False),
         ],
     )
@@ -652,6 +670,15 @@ class TestRealWorldLabels:
 
     def test_hundefutter_implies_tierart_pet(self) -> None:
         assert self._matches("art17_001_pet", "Hundefutter für Welpen")
+
+    def test_horse_supplementary_feed_implies_tierart(self) -> None:
+        assert self._matches("art17_001_complementary", "Supplementary feed for horses")
+
+    def test_dutch_paarden_implies_tierart(self) -> None:
+        assert self._matches("art17_001_complementary", "Aanvullend diervoeder voor paarden")
+
+    def test_single_feed_wiederkaeuer_implies_tierart(self) -> None:
+        assert self._matches("art16_003", "Einzelfuttermittel für Wiederkäuer, Schweine, Pferde")
 
     def test_katzenfutter_implies_tierart_single_feed(self) -> None:
         assert self._matches("art16_003", "Katzenfutter Adult"), (

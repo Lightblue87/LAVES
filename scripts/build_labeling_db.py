@@ -152,9 +152,12 @@ FEED_TYPES = [
         (
             "Ergänzungsfuttermittel,Ergaenzungsfuttermittel,Ergänzungsfutter,"
             "Ergänzungsfutermittel,Ergaenzungsfutermittel,Ergänzungsfuttermitel,"
-            "Ergaenzungsfuttermitel,"
-            "complementary pet food,complementary feed,alimento complementare,aliment complémentaire,"
-            "aanvullend diervoeder"
+            "Ergaenzungsfuttermitel,Raufutterergänzung,Raufutterergaenzung,"
+            "complementary pet food,complementary feed,supplementary feed,supplementary feed for,"
+            "alimento complementare,aliment complémentaire,aliment complementaire,"
+            "aanvullend diervoeder,mieszanka paszowa uzupelniajaca,"
+            "mieszanka paszowa uzupełniająca,alimento complementar,doplnkove krmivo,"
+            "doplňkové krmivo,kompletteringsfoder"
         ),
     ),
     (
@@ -212,13 +215,15 @@ ADDITIVE_SECTION_HEADERS: list[tuple[str, str, int]] = [
     ("Zusatzstoffe", "de", 11),
     ("Zusatzstoff:", "de", 12),
     ("Zusatzstoff", "de", 13),
-    ("nutritional additives", "en", 14),
-    ("zootechnical additives", "en", 15),
-    ("technological additives", "en", 16),
-    ("sensory additives", "en", 17),
-    ("additives per kg:", "en", 18),
-    ("additives per kg", "en", 19),
-    ("additives:", "en", 20),
+    ("Zusatzstoffe je kg:", "de", 14),
+    ("Zusatzstoffe je kg", "de", 15),
+    ("nutritional additives", "en", 16),
+    ("zootechnical additives", "en", 17),
+    ("technological additives", "en", 18),
+    ("sensory additives", "en", 19),
+    ("additives per kg:", "en", 20),
+    ("additives per kg", "en", 21),
+    ("additives:", "en", 22),
 ]
 
 # Prefixes of analytical constituents that must NOT be treated as Zusatzstoffe
@@ -1373,7 +1378,7 @@ def _build_patterns() -> list[tuple]:
     #   Covers "Zulassungsnummer der Partie: BAF 1015090925"
     #   Requires at least 4 digits to distinguish from "siehe Boden-Aufdruck" (no digits)
     rows += _rx("art15_004", [
-        r"\b(LOT|L|Charge|Chargen-Nr\.?|Los|Partie)(?!\w)\s?[:\-]?\s?[A-Z0-9\-\/]*\d[A-Z0-9\-\/]*\b",
+        r"\b(LOT|L|Charge|Chargen-Nr\.?|Chargennummer|Los|Losnummer|Los-Nr\.?|Partie|Partienummer|Partie-Nr\.?|Partie\s+Nr\.?)(?!\w)\s?[:\-]?\s?[A-Z0-9\-\/]*\d[A-Z0-9\-\/]*\b",
         r"\b(?:Zulassungsnummer|Kennnummer)\s+der\s+Partie\s*[:\-]?\s*"
         r"[A-Z]{1,5}\s*\d{4,}[A-Z0-9]*\b",
     ])
@@ -1459,6 +1464,7 @@ def _build_patterns() -> list[tuple]:
     _mhd_kw = [
         "Mindesthaltbarkeit",
         "mindestens haltbar bis",
+        "Mindesthaltbar bis",
         "MHD",
         "best before",
         "verwendbar bis",
@@ -1485,11 +1491,11 @@ def _build_patterns() -> list[tuple]:
     _mhd_rx = [
         # German / general: standard abbreviations + concrete date (DD.MM.YYYY etc.)
         # Includes "haltbar bis" (without "mindestens") for e.g. "-18°C haltbar bis: 09.12.26"
-        r"\b(MHD|BBD|mindestens haltbar bis|haltbar bis|verwendbar bis)"
+        r"\b(MHD|BBD|mindestens haltbar bis|mindesthaltbar bis|haltbar bis|verwendbar bis)"
         r"[:\s]*\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{2,4}\b",
         # MM/YYYY format without day: "MHD 03/2028", "MHD: 01-2027"
         # Common on box edges and sticker prints (e.g. EDEKA Schleck Snack)
-        r"\b(MHD|BBD|mindestens haltbar bis|haltbar bis|verwendbar bis)"
+        r"\b(MHD|BBD|mindestens haltbar bis|mindesthaltbar bis|haltbar bis|verwendbar bis)"
         r"[:\s]*\d{1,2}[\/\-]\d{4}\b",
         # English / international: EXP / BBE + concrete date
         # Covers "EXP: 29.11.2026" and "BBE 01.03.2027" on multilingual EU labels
@@ -1507,23 +1513,25 @@ def _build_patterns() -> list[tuple]:
 
     # art16_003 – Tierart (single_feed, optional)
     _animal_de_rx = [
-        r"\bfür\s+(?:[A-Za-zÄÖÜäöüß\-]+\s+){0,4}(Hunde|Hund|Katzen|Katze|Rinder|Kälber|Kaelber|Schweine|Geflügel|Gefluegel|Pferde|Fische|Kaninchen|Schafe|Ziegen|Nager|Nagetiere|Meerschweinchen|Zwergkaninchen|Hamster|Kleintiere)\b",
+        r"\bfür\s+(?:[A-Za-zÄÖÜäöüß\-]+\s+){0,4}(Hunde|Hund|Katzen|Katze|Rinder|Kälber|Kaelber|Wiederkäuer|Wiederkaeuer|Schweine|Geflügel|Gefluegel|Pferde|Fische|Kaninchen|Schafe|Ziegen|Nager|Nagetiere|Meerschweinchen|Zwergkaninchen|Hamster|Kleintiere)\b",
         r"\b(Hunde|Hund|Katzen|Katze|Rinder|Kälber|Kaelber|Schweine|Geflügel|Gefluegel|Pferde|Fische|Kaninchen|Schafe|Ziegen|Nager|Nagetiere|Meerschweinchen|Zwergkaninchen|Hamster)\s+(?:adult|ausgewachsen|ausgewachsene|senior|junior)\b",
     ]
     _animal_en_rx = [
-        r"\bfor\s+(?:[A-Za-z\-]+\s+){0,4}(dogs?|cats?|cattle|calves|pigs?|poultry|horses?|fish|rabbits?|rodents?|hamsters?|guinea\s+pigs?)\b",
+        r"\bfor\s+(?:[A-Za-z\-]+\s+){0,4}(dogs?|cats?|cattle|calves|ruminants?|pigs?|poultry|horses?|fish|rabbits?|rodents?|hamsters?|guinea\s+pigs?)\b",
     ]
     _animal_other_rx = [
-        r"\bper\s+(?:[A-Za-zÀ-ÿ\-]+\s+){0,4}(cani|gatti|roditori|conigli)\b",
-        r"\bpour\s+(?:[A-Za-zÀ-ÿ\-]+\s+){0,4}(chiens|chats|rongeurs|lapins)\b",
-        r"\bvoor\s+(?:[A-Za-zÀ-ÿ\-]+\s+){0,4}(honden|katten|knaagdieren|konijnen)\b",
-        r"\bdla\s+(?:[A-Za-zÀ-ÿ\-]+\s+){0,4}(psów|psow|kotów|kotow|gryzoni)\b",
+        r"\bper\s+(?:[A-Za-zÀ-ÿ\-]+\s+){0,4}(cani|gatti|cavalli|roditori|conigli)\b",
+        r"\bpour\s+(?:[A-Za-zÀ-ÿ\-]+\s+){0,4}(chiens|chats|chevaux|rongeurs|lapins)\b",
+        r"\bvoor\s+(?:[A-Za-zÀ-ÿ\-]+\s+){0,4}(honden|katten|paarden|knaagdieren|konijnen)\b",
+        r"\bdla\s+(?:[A-Za-zÀ-ÿ\-]+\s+){0,4}(psów|psow|kotów|kotow|koni|gryzoni)\b",
+        r"\bpara\s+(?:[A-Za-zÀ-ÿ\-]+\s+){0,4}(cavalos|caballos|perros|gatos)\b",
     ]
     # Concrete species declaration → found (1.0)
     rows += _kw("art16_003", [
         "für Hunde", "für Katzen", "für Rinder", "für Kälber", "für Schweine",
         "für Geflügel", "für Pferde", "für Fische", "für Kaninchen",
-        "für Schafe", "für Ziegen", "für Hund", "für Katze",
+        "für Schafe", "für Ziegen", "für Wiederkäuer", "für Wiederkaeuer",
+        "für Hund", "für Katze",
         # Rodents / small animals — common in DE retail (new images: Vitakraft, EDEKA Muckel)
         "für Nager", "für Nagetiere", "für Meerschweinchen",
         "für Zwergkaninchen", "für Hamster", "für Kleintiere",
@@ -1535,19 +1543,21 @@ def _build_patterns() -> list[tuple]:
     rows += _kw("art16_003", [
         "Katzenfutter", "Hundefutter", "Rinderfutter", "Geflügelfutter",
         "Pferdefutter", "Kaninchenfutter", "Katzenahrung", "Hundenahrung",
-        "Nagerfutter", "Meerschweinchenfutter", "Kleintiernahrung",
+        "Wiederkäuerfutter", "Nagerfutter", "Meerschweinchenfutter",
+        "Kleintiernahrung",
     ], weight=0.8)
     rows += _rx("art16_003", _animal_de_rx)
     rows += _kw("art16_003", [
         "for dogs", "for cats", "for cattle", "for calves", "for pigs",
-        "for poultry", "for horses", "for fish", "for rabbits",
-        "for rodents", "for hamsters", "for guinea pigs",
+        "for poultry", "for horses", "for horse", "for fish", "for rabbits",
+        "for rodents", "for hamsters", "for guinea pigs", "for ruminants",
         "animal species:", "feeding recommendation:",
     ], language="en")
     rows += _rx("art16_003", _animal_en_rx, language="en")
     rows += _kw("art16_003", [
-        "per cani", "per gatti", "pour chiens", "pour chats",
-        "voor honden", "voor katten", "dla psów", "dla kotów",
+        "per cani", "per gatti", "per cavalli", "pour chiens", "pour chats",
+        "pour chevaux", "voor honden", "voor katten", "voor paarden",
+        "dla psów", "dla kotów", "dla koni", "para cavalos", "para caballos",
         # Rodent species in other EU languages
         "pour rongeurs", "pour lapins", "per roditori", "per conigli",
         "voor knaagdieren", "voor konijnen", "dla gryzoni",
@@ -1566,7 +1576,8 @@ def _build_patterns() -> list[tuple]:
     _tierart_concrete = [
         "für Hunde", "für Katzen", "für Rinder", "für Kälber", "für Schweine",
         "für Geflügel", "für Pferde", "für Fische", "für Kaninchen",
-        "für Schafe", "für Ziegen", "für Hund", "für Katze", "Hunde und Katzen",
+        "für Schafe", "für Ziegen", "für Wiederkäuer", "für Wiederkaeuer",
+        "für Hund", "für Katze", "Hunde und Katzen",
         # Rodents / small animals
         "für Nager", "für Nagetiere", "für Meerschweinchen",
         "für Zwergkaninchen", "für Hamster", "für Kleintiere",
@@ -1576,7 +1587,8 @@ def _build_patterns() -> list[tuple]:
     _tierart_compound = [
         "Katzenfutter", "Hundefutter", "Rinderfutter", "Geflügelfutter",
         "Pferdefutter", "Kaninchenfutter", "Katzenahrung", "Hundenahrung",
-        "Nagerfutter", "Meerschweinchenfutter", "Kleintiernahrung",
+        "Wiederkäuerfutter", "Nagerfutter", "Meerschweinchenfutter",
+        "Kleintiernahrung",
     ]
     for _, suffix in _COMPOUND_FEEDS:
         rows += _kw(f"art17_001_{suffix}", _tierart_concrete)           # found (1.0)
@@ -1585,15 +1597,16 @@ def _build_patterns() -> list[tuple]:
         rows += _rx(f"art17_001_{suffix}", _animal_de_rx)
         rows += _kw(f"art17_001_{suffix}", [
             "for dogs", "for cats", "for cattle", "for calves", "for pigs",
-            "for poultry", "for horses", "for fish", "for rabbits",
-            "for rodents", "for hamsters", "for guinea pigs",
+            "for poultry", "for horses", "for horse", "for fish", "for rabbits",
+            "for rodents", "for hamsters", "for guinea pigs", "for ruminants",
         ], language="en")
         rows += _kw(f"art17_001_{suffix}", ["feeding recommendation:"],
                     weight=0.7, language="en")
         rows += _rx(f"art17_001_{suffix}", _animal_en_rx, language="en")
         rows += _kw(f"art17_001_{suffix}", [
-            "per cani", "per gatti", "pour chiens", "pour chats",
-            "voor honden", "voor katten", "dla psów", "dla kotów",
+            "per cani", "per gatti", "per cavalli", "pour chiens", "pour chats",
+            "pour chevaux", "voor honden", "voor katten", "voor paarden",
+            "dla psów", "dla kotów", "dla koni", "para cavalos", "para caballos",
             "pour rongeurs", "pour lapins", "per roditori", "per conigli",
             "voor knaagdieren", "voor konijnen", "dla gryzoni",
         ], language="other")

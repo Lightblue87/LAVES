@@ -967,4 +967,92 @@ final class AdditiveDeclarationParserTests: XCTestCase {
                        "Old E-style kennnummer must be suppressed when name found via DB")
         XCTAssertEqual(declarations.first?.substanceName, "Propylgallat")
     }
+
+    func testAmountFirstInternationalUnitVariantsParsed() {
+        let text = """
+        Zusatzstoffe je kg:
+        15.000I.E. Vitamin A; 1.500 l.E. Vitamin D3; 540æg Biotin;
+        15.000 mcg Biotin; 20mg Kupfer als Kupfer-(II)-sulfat.
+        """
+
+        let declarations = AdditiveDeclarationParser.parse(text: text, additives: [])
+        let names = Set(declarations.map(\.substanceName))
+
+        XCTAssertTrue(names.contains("Vitamin A"))
+        XCTAssertTrue(names.contains("Vitamin D3"))
+        XCTAssertTrue(names.contains("Biotin"))
+        XCTAssertTrue(names.contains("Kupfer"))
+        XCTAssertTrue(declarations.contains { $0.amount?.unit.localizedCaseInsensitiveContains("I.E") == true })
+        XCTAssertTrue(declarations.contains { $0.amount?.unit == "æg" })
+        XCTAssertTrue(declarations.contains { $0.amount?.unit == "mcg" })
+    }
+
+    func testAdditiveNamesStartingWithAnalyticalMineralWordsAreNotExcluded() {
+        let text = "Zusatzstoffe je kg: Calcium-D-Pantothenat 1.000 mg, Natriumselenit 10 mg"
+
+        let declarations = AdditiveDeclarationParser.parse(text: text, additives: [])
+        let names = Set(declarations.map(\.substanceName))
+
+        XCTAssertTrue(names.contains("Calcium-D-Pantothenat"))
+        XCTAssertTrue(names.contains("Natriumselenit"))
+    }
+
+    // Cross-format dedup: DB has BOTH new kennnummer AND old E-style for the same substance.
+    // Label shows the name + old E-number, but DB entry for the name uses the new kennnummer.
+    // relatedKennnummern() must bridge the gap via numeric core matching.
+    func testCrossFormatDedup_NewKennnummerInDB_OldENumberOnLabel() {
+        // DB: two entries for the same substance (Bentonit variants)
+        let bentonitNew = Additive(
+            eNumber: "1m558",         // new kennnummer
+            name: "Bentonit",
+            species: "Rinder", maxAgeDays: nil, minMgKg: nil, maxMgKg: 20000, unit: nil,
+            regulation: nil, sourceFile: nil, sourcePage: nil, animalCategory: nil
+        )
+        let bentonitOld = Additive(
+            eNumber: "E 558*",        // old E-style kennnummer, same numeric core "558"
+            name: "Bentonit-Montmorillonit",
+            species: "Schweine", maxAgeDays: nil, minMgKg: nil, maxMgKg: 20000, unit: nil,
+            regulation: nil, sourceFile: nil, sourcePage: nil, animalCategory: nil
+        )
+        let db = [bentonitNew, bentonitOld]
+
+        // Label: name + old E-number (most common cross-format case)
+        let text = "Zusatzstoffe: Bentonit 5000 mg/kg, E 558 5000 mg/kg"
+        let declarations = AdditiveDeclarationParser.parse(text: text, additives: db)
+
+        // "Bentonit" → DB match "1m558" (core "558")
+        // relatedKennnummern("1m558", in: db) → also finds "E 558*" (core "558") → adds "E558"
+        // "E 558" on label → normalised "E558" → in coveredIdentifiers → suppressed
+        XCTAssertEqual(declarations.count, 1,
+                       "Old E-number must be suppressed via numeric-core cross-reference")
+        XCTAssertEqual(declarations.first?.substanceName, "Bentonit")
+    }
+
+    // Inverse: label has name + new kennnummer; DB entry uses old E-style kennnummer
+    func testCrossFormatDedup_OldENumberInDB_NewKennnummerOnLabel() {
+        let tartrazinOld = Additive(
+            eNumber: "E 102*",        // old-style kennnummer in DB
+            name: "Tartrazin",
+            species: "Alle Tierarten", maxAgeDays: nil, minMgKg: nil, maxMgKg: nil, unit: nil,
+            regulation: nil, sourceFile: nil, sourcePage: nil, animalCategory: nil
+        )
+        let tartrazinNew = Additive(
+            eNumber: "2a102",         // new-style kennnummer in DB, same core "102"
+            name: "Tartrazin",
+            species: "Alle Tierarten", maxAgeDays: nil, minMgKg: nil, maxMgKg: nil, unit: nil,
+            regulation: nil, sourceFile: nil, sourcePage: nil, animalCategory: nil
+        )
+        let db = [tartrazinOld, tartrazinNew]
+
+        // Label: name + new kennnummer (label updated to new system, DB still has old entry too)
+        let text = "Zusatzstoffe: Tartrazin 50 mg/kg, 2a102 50 mg/kg"
+        let declarations = AdditiveDeclarationParser.parse(text: text, additives: db)
+
+        // "Tartrazin" → DB match "E 102*" or "2a102" (both have core "102")
+        // coveredIdentifiers gets "E102" + "2A102" (via relatedKennnummern)
+        // "2a102" on label → looksLikeKennnummer → normalised "2A102" → suppressed
+        XCTAssertEqual(declarations.count, 1,
+                       "New kennnummer must be suppressed when name found and DB has cross-format entry")
+        XCTAssertEqual(declarations.first?.substanceName, "Tartrazin")
+    }
 }

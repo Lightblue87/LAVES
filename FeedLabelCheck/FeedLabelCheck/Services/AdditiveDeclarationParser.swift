@@ -31,6 +31,8 @@ struct AdditiveDeclarationParser {
         "Sensorische Zusatzstoffe",
         "Zusatzstoff(e):",
         "Zusatzstoffe/kg:",
+        "Zusatzstoffe je kg:",
+        "Zusatzstoffe je kg",
         "Zusatzstoffe:",
         "Zusatzstoffe",
         "Zusatzstoff:",
@@ -73,8 +75,18 @@ struct AdditiveDeclarationParser {
         //       Longer forms come first to avoid "mg" matching inside "mg/kg".
         let nameGroup = #"([A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß\-]{2,}(?:\s+[A-Za-zÄÖÜäöüß0-9][A-Za-zÄÖÜäöüß0-9\-]*)?)"#
         let amountGroup = #"(\d[\d\.,\s]{0,9})"#
-        let unitGroup   = #"(mg/kg|g/kg|IE/kg|IU/kg|KBE/kg|CFU/kg|µg/kg|mg/l|%|mg|IE|IU|µg|\bg\b)"#
+        let unitGroup   = additiveUnitPattern
         let pattern = nameGroup + #"\s+"# + amountGroup + #"\s*"# + unitGroup
+        return try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+    }()
+
+    /// Captures common additive declarations where the amount comes before the
+    /// substance name, e.g. "15.000I.E. Vitamin A" or "540µg Biotin".
+    private static let amountFirstEntryRegex: NSRegularExpression? = {
+        let amountGroup = #"(\d[\d\.,\s]{0,9})"#
+        let unitGroup = additiveUnitPattern
+        let nameGroup = #"(Vitamin\s+[A-Za-z0-9]+|[A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß0-9\-]{2,})"#
+        let pattern = amountGroup + #"\s*"# + unitGroup + #"\s+"# + nameGroup
         return try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
     }()
 
@@ -82,10 +94,13 @@ struct AdditiveDeclarationParser {
     private static let eNumberRegex: NSRegularExpression? = {
         let eNumGroup   = #"(E\s*\d{3,4}[a-z]?)"#
         let amountGroup = #"(\d[\d\.,\s]{0,9})"#
-        let unitGroup   = #"(mg/kg|g/kg|IE/kg|IU/kg|KBE/kg|CFU/kg|µg/kg|mg/l|%)"#
+        let unitGroup   = #"(mg/kg|g/kg|[Il]\.?\s?E\.?/kg|IE/kg|IU/kg|KBE/kg|CFU/kg|µg/kg|mcg/kg|æg/kg|mg/l|%)"#
         let pattern = #"\b"# + eNumGroup + #"\s+"# + amountGroup + #"\s*"# + unitGroup
         return try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
     }()
+
+    private static let additiveUnitPattern =
+        #"(mg/kg|g/kg|[Il]\.?\s?E\.?/kg|IE/kg|IU/kg|KBE/kg|CFU/kg|µg/kg|mcg/kg|æg/kg|mg/l|%|[Il]\.?\s?E\.?|IE|IU|µg|mcg|æg|mg|\bg\b)"#
 
     /// Captures: (1) new EU 1831/2003 kennnummer, (2) amount raw text, (3) unit
     /// Format: 1-2 leading digits + 1-2 letters + digits + optional trailing letters
@@ -122,11 +137,19 @@ struct AdditiveDeclarationParser {
         let rawEntries = extractRawEntries(from: text, config: config)
         guard !rawEntries.isEmpty else { return [] }
 
-        // Pass 1 — deduplicate by normalised substance name, run DB matching
+        // Pass 1 — deduplicate exact repeated declarations, run DB matching.
+        // Keep the same substance when OCR exposes different unit variants
+        // ("540æg Biotin" and "15.000 mcg Biotin") so they remain reviewable.
         var seen = Set<String>()
         var all: [AdditiveDeclaration] = []
         for entry in rawEntries {
-            let key = entry.name.lowercased().trimmingCharacters(in: .whitespaces)
+            let unitKey = entry.amount?.unit.lowercased().replacingOccurrences(of: " ", with: "") ?? ""
+            let valueKey = entry.amount.map { String(format: "%.6f", $0.value) } ?? ""
+            let key = [
+                entry.name.lowercased().trimmingCharacters(in: .whitespaces),
+                valueKey,
+                unitKey
+            ].joined(separator: "|")
             guard seen.insert(key).inserted else { continue }
             let (confidence, matched) = matchToDatabase(substanceName: entry.name,
                                                         additives: additives)
@@ -144,13 +167,17 @@ struct AdditiveDeclarationParser {
         // are fallback identifiers. If the same substance was already captured under its
         // chemical/common name and the DB provides the kennnummer link, the bare identifier
         // entry is dropped to avoid duplicates.
-        let coveredIdentifiers: Set<String> = Set(
-            all.compactMap { decl -> String? in
-                guard !looksLikeIdentifier(decl.substanceName) else { return nil }
-                guard let k = decl.matchedAdditive?.eNumber, !k.isEmpty else { return nil }
-                return normalizeENumber(k)
-            }
-        )
+        //
+        // Cross-format dedup: "1m558" (new format) and "E 558" (old format) describe the same
+        // substance. relatedKennnummern() finds all DB entries sharing the same numeric core
+        // (the significant digit sequence, e.g. "558") and adds their normalised kennnummern
+        // to the covered set, bridging the format gap without needing an explicit mapping table.
+        var coveredIdentifiers = Set<String>()
+        for decl in all where !looksLikeIdentifier(decl.substanceName) {
+            guard let k = decl.matchedAdditive?.eNumber, !k.isEmpty else { continue }
+            coveredIdentifiers.insert(normalizeENumber(k))
+            coveredIdentifiers.formUnion(relatedKennnummern(k, in: additives))
+        }
         guard !coveredIdentifiers.isEmpty else { return all }
 
         return all.filter { decl in
@@ -192,6 +219,30 @@ struct AdditiveDeclarationParser {
         raw.uppercased()
             .replacingOccurrences(of: " ", with: "")
             .replacingOccurrences(of: "*", with: "")
+    }
+
+    /// Extracts the significant numeric sequence from a kennnummer.
+    /// The EU kept the same number across both systems (old "E 558*" → new "1m558"),
+    /// so the longest 2+-digit run is a reliable link between formats.
+    ///   "E 310*" → "310",  "1m558" → "558",  "3a300" → "300",  "3c322IV" → "322"
+    private static func numericCore(_ kennnummer: String) -> String? {
+        let n = normalizeENumber(kennnummer)
+        let matches = n.matches(of: /\d{2,}/).map { String(n[$0.range]) }
+        return matches.max(by: { $0.count < $1.count })
+    }
+
+    /// Returns the normalised kennnummern of ALL DB entries that share the same
+    /// numeric core as `kennnummer` — bridging old E-numbers and new 1831/2003 codes.
+    /// Only produces results when the DB actually has cross-format entries; no guessing.
+    private static func relatedKennnummern(_ kennnummer: String, in additives: [Additive]) -> Set<String> {
+        guard let core = numericCore(kennnummer), !core.isEmpty else { return [] }
+        var result = Set<String>()
+        for additive in additives {
+            let k = additive.eNumber
+            guard !k.isEmpty, let kCore = numericCore(k), kCore == core else { continue }
+            result.insert(normalizeENumber(k))
+        }
+        return result
     }
 
     // MARK: - Raw entry extraction
@@ -247,6 +298,7 @@ struct AdditiveDeclarationParser {
                 : defaultAnalyticalPrefixes
             let sectionText = String(text[start..<end])
             results.append(contentsOf: applyEntryRegex(entryRegex, to: sectionText, exclusions: exclusions))
+            results.append(contentsOf: applyAmountFirstEntryRegex(amountFirstEntryRegex, to: sectionText, exclusions: exclusions))
         }
         return results
     }
@@ -337,6 +389,38 @@ struct AdditiveDeclarationParser {
             let unit      = String(text[unitRange])
             let rawText   = String(text[matchRange])
 
+            let cleanedName = cleanSubstanceName(name)
+            guard !isAnalyticalConstituent(cleanedName, exclusions: exclusions) else { continue }
+
+            let parsed = parseNumber(amountRaw).map {
+                ParsedAdditiveAmount(value: $0, unit: unit, rawText: amountRaw)
+            }
+            results.append((name: cleanedName, amount: parsed, rawText: rawText))
+        }
+        return results
+    }
+
+    private static func applyAmountFirstEntryRegex(
+        _ regex: NSRegularExpression?,
+        to text: String,
+        exclusions: [String]
+    ) -> [(name: String, amount: ParsedAdditiveAmount?, rawText: String)] {
+        guard let regex else { return [] }
+        let nsText = text as NSString
+        let fullRange = NSRange(location: 0, length: nsText.length)
+        var results: [(name: String, amount: ParsedAdditiveAmount?, rawText: String)] = []
+
+        for match in regex.matches(in: text, range: fullRange) {
+            guard let amountRange = Range(match.range(at: 1), in: text),
+                  let unitRange   = Range(match.range(at: 2), in: text),
+                  let nameRange   = Range(match.range(at: 3), in: text),
+                  let matchRange  = Range(match.range,        in: text) else { continue }
+
+            let amountRaw = String(text[amountRange]).trimmingCharacters(in: .whitespaces)
+            let unit      = String(text[unitRange])
+            let name      = cleanSubstanceName(String(text[nameRange]).trimmingCharacters(in: .whitespaces))
+            let rawText   = String(text[matchRange])
+
             guard !isAnalyticalConstituent(name, exclusions: exclusions) else { continue }
 
             let parsed = parseNumber(amountRaw).map {
@@ -345,6 +429,17 @@ struct AdditiveDeclarationParser {
             results.append((name: name, amount: parsed, rawText: rawText))
         }
         return results
+    }
+
+    private static func cleanSubstanceName(_ raw: String) -> String {
+        let separators = [" als ", " as ", " como ", " en tant que "]
+        var cleaned = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        for separator in separators {
+            if let range = cleaned.range(of: separator, options: [.caseInsensitive]) {
+                cleaned = String(cleaned[..<range.lowerBound])
+            }
+        }
+        return cleaned.trimmingCharacters(in: CharacterSet(charactersIn: " ,;:-()"))
     }
 
     // MARK: - Number parsing (3-digit separator rule)
@@ -390,8 +485,20 @@ struct AdditiveDeclarationParser {
     // MARK: - Analytical-constituent filter
 
     private static func isAnalyticalConstituent(_ name: String, exclusions: [String]) -> Bool {
-        let normalized = name.lowercased().replacingOccurrences(of: "-", with: "")
-        return exclusions.contains { normalized.hasPrefix($0) }
+        let normalized = name.lowercased()
+            .replacingOccurrences(of: "-", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let exactOnly = Set([
+            "natrium", "phosphor", "stärke", "zucker", "kalium", "chlorid", "calcium"
+        ])
+
+        return exclusions.contains { exclusion in
+            let e = exclusion.lowercased()
+            if exactOnly.contains(e) {
+                return normalized == e
+            }
+            return normalized.hasPrefix(e)
+        }
     }
 
     // MARK: - DB matching
