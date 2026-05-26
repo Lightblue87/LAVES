@@ -71,7 +71,7 @@ struct AdditiveDeclarationParser {
         //       Longer forms come first to avoid "mg" matching inside "mg/kg".
         let nameGroup = #"([A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß\-]{2,}(?:\s+[A-Za-zÄÖÜäöüß0-9][A-Za-zÄÖÜäöüß0-9\-]*)?)"#
         let amountGroup = #"(\d[\d\.,\s]{0,9})"#
-        let unitGroup   = #"(mg/kg|g/kg|IE/kg|IU/kg|KBE/kg|CFU/kg|µg/kg|mg/l|%|mg|IE|IU|µg)"#
+        let unitGroup   = #"(mg/kg|g/kg|IE/kg|IU/kg|KBE/kg|CFU/kg|µg/kg|mg/l|%|mg|IE|IU|µg|\bg\b)"#
         let pattern = nameGroup + #"\s+"# + amountGroup + #"\s*"# + unitGroup
         return try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
     }()
