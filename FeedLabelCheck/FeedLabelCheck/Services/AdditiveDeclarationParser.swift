@@ -78,12 +78,23 @@ struct AdditiveDeclarationParser {
         return try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
     }()
 
-    /// Captures: (1) E-number, (2) amount raw text, (3) unit
+    /// Captures: (1) E-number (old Directive 70/524/EEC format), (2) amount raw text, (3) unit
     private static let eNumberRegex: NSRegularExpression? = {
         let eNumGroup   = #"(E\s*\d{3,4}[a-z]?)"#
         let amountGroup = #"(\d[\d\.,\s]{0,9})"#
         let unitGroup   = #"(mg/kg|g/kg|IE/kg|IU/kg|KBE/kg|CFU/kg|µg/kg|mg/l|%)"#
         let pattern = #"\b"# + eNumGroup + #"\s+"# + amountGroup + #"\s*"# + unitGroup
+        return try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+    }()
+
+    /// Captures: (1) new EU 1831/2003 kennnummer, (2) amount raw text, (3) unit
+    /// Format: 1-2 leading digits + 1-2 letters + digits + optional trailing letters
+    /// Examples on labels: 3a300 200 mg/kg, 1m558 5000 mg/kg, 2b620i 500 mg/kg
+    private static let kennnummerRegex: NSRegularExpression? = {
+        let kNumGroup   = #"(\d{1,2}[a-zA-Z]{1,2}\d+[a-zA-Z]{0,4})"#
+        let amountGroup = #"(\d[\d\.,\s]{0,9})"#
+        let unitGroup   = #"(mg/kg|g/kg|IE/kg|IU/kg|KBE/kg|CFU/kg|µg/kg|mg/l|%)"#
+        let pattern = #"\b"# + kNumGroup + #"\s+"# + amountGroup + #"\s*"# + unitGroup
         return try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
     }()
 
@@ -103,9 +114,10 @@ struct AdditiveDeclarationParser {
     ///   - additives: Loaded additive database entries for DB matching.
     ///   - config:    Optional DB-driven parser config; falls back to built-in defaults when nil.
     /// - Returns: Parsed and DB-matched declarations, deduplicated by substance name **and**
-    ///            E-number. E-numbers are treated as fallback: when the same substance was
-    ///            already found by its chemical/common name (e.g. "Vitamin E" → E306),
-    ///            the redundant E-number entry is suppressed.
+    ///            identifier label. Both old E-numbers (e.g. "E310") and new EU 1831/2003
+    ///            kennnummern (e.g. "3a300", "1m558") are treated as fallback identifiers:
+    ///            when the same substance was already found by its chemical/common name and
+    ///            the DB link is known, the redundant identifier entry is suppressed.
     static func parse(text: String, additives: [Additive], config: AdditiveParserConfig? = nil) -> [AdditiveDeclaration] {
         let rawEntries = extractRawEntries(from: text, config: config)
         guard !rawEntries.isEmpty else { return [] }
@@ -127,28 +139,29 @@ struct AdditiveDeclarationParser {
             ))
         }
 
-        // Pass 2 — suppress redundant E-number entries.
-        // E-numbers are the historical/fallback designation. If the same substance was
-        // already captured under its chemical name (e.g. "Vitamin E" matched to E306
-        // in the DB), the bare "E306" entry is dropped to avoid duplicates.
-        let coveredENumbers: Set<String> = Set(
+        // Pass 2 — suppress redundant identifier entries.
+        // Both old E-numbers (e.g. "E310") and new EU 1831/2003 kennnummern (e.g. "3a300")
+        // are fallback identifiers. If the same substance was already captured under its
+        // chemical/common name and the DB provides the kennnummer link, the bare identifier
+        // entry is dropped to avoid duplicates.
+        let coveredIdentifiers: Set<String> = Set(
             all.compactMap { decl -> String? in
-                guard !looksLikeENumber(decl.substanceName) else { return nil }
-                guard let eNum = decl.matchedAdditive?.eNumber, !eNum.isEmpty else { return nil }
-                return normalizeENumber(eNum)
+                guard !looksLikeIdentifier(decl.substanceName) else { return nil }
+                guard let k = decl.matchedAdditive?.eNumber, !k.isEmpty else { return nil }
+                return normalizeENumber(k)
             }
         )
-        guard !coveredENumbers.isEmpty else { return all }
+        guard !coveredIdentifiers.isEmpty else { return all }
 
         return all.filter { decl in
-            guard looksLikeENumber(decl.substanceName) else { return true }
-            return !coveredENumbers.contains(normalizeENumber(decl.substanceName))
+            guard looksLikeIdentifier(decl.substanceName) else { return true }
+            return !coveredIdentifiers.contains(normalizeENumber(decl.substanceName))
         }
     }
 
-    // MARK: - E-number helpers
+    // MARK: - Identifier helpers (E-numbers + kennnummern)
 
-    /// Returns true when `name` looks like a standalone E-number (e.g. "E306", "E 300", "E160a").
+    /// Returns true when `name` looks like an old-style E-number (e.g. "E306", "E 300", "E160a").
     /// Internal (not private) so it can be tested directly.
     static func looksLikeENumber(_ name: String) -> Bool {
         let n = name.uppercased().replacingOccurrences(of: " ", with: "")
@@ -156,9 +169,29 @@ struct AdditiveDeclarationParser {
         return n.dropFirst().prefix(3).allSatisfy(\.isNumber)
     }
 
-    /// Normalises an E-number to a canonical uppercase no-space form ("E 306" → "E306").
+    /// Returns true when `name` looks like a new EU 1831/2003 kennnummer
+    /// (e.g. "3a300", "1m558", "2b620i", "3c322IV").
+    /// Format: 1–2 leading digits + 1–2 letters + digits + optional trailing letters.
+    static func looksLikeKennnummer(_ name: String) -> Bool {
+        let n = name.replacingOccurrences(of: " ", with: "")
+        guard n.count >= 4 else { return false }
+        let pattern = #"^\d{1,2}[a-zA-Z]{1,2}\d+[a-zA-Z]{0,4}$"#
+        return n.range(of: pattern, options: .regularExpression) != nil
+    }
+
+    /// Returns true when `name` is any kind of substance identifier label
+    /// — either an old E-number or a new EU 1831/2003 kennnummer.
+    static func looksLikeIdentifier(_ name: String) -> Bool {
+        looksLikeENumber(name) || looksLikeKennnummer(name)
+    }
+
+    /// Normalises an identifier to a canonical uppercase no-space form.
+    /// Strips spaces, asterisks (used in DB for legacy entries), and uppercases.
+    /// "E 306" → "E306", "E 310*" → "E310", "3a300" → "3A300"
     static func normalizeENumber(_ raw: String) -> String {
-        raw.uppercased().replacingOccurrences(of: " ", with: "")
+        raw.uppercased()
+            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "*", with: "")
     }
 
     // MARK: - Raw entry extraction
@@ -169,7 +202,8 @@ struct AdditiveDeclarationParser {
     ) -> [(name: String, amount: ParsedAdditiveAmount?, rawText: String)] {
         var results: [(name: String, amount: ParsedAdditiveAmount?, rawText: String)] = []
         results.append(contentsOf: extractFromSections(text, config: config))
-        results.append(contentsOf: extractENumberEntries(text))
+        results.append(contentsOf: extractENumberEntries(text))       // old E-number fallback
+        results.append(contentsOf: extractKennnummerEntries(text))    // new kennnummer fallback
         return results
     }
 
@@ -237,6 +271,37 @@ struct AdditiveDeclarationParser {
             let name = String(text[nameRange])
                 .replacingOccurrences(of: " ", with: "")
                 .uppercased()
+            let amountRaw = String(text[amountRange]).trimmingCharacters(in: .whitespaces)
+            let unit      = String(text[unitRange])
+            let rawText   = String(text[matchRange])
+
+            let parsed = parseNumber(amountRaw).map {
+                ParsedAdditiveAmount(value: $0, unit: unit, rawText: amountRaw)
+            }
+            results.append((name: name, amount: parsed, rawText: rawText))
+        }
+        return results
+    }
+
+    // MARK: - Kennnummer unconditional extraction
+
+    /// Extracts new EU 1831/2003 kennnummer entries ("3a300 200 mg/kg") from anywhere in text.
+    private static func extractKennnummerEntries(
+        _ text: String
+    ) -> [(name: String, amount: ParsedAdditiveAmount?, rawText: String)] {
+        guard let regex = kennnummerRegex else { return [] }
+        let nsText = text as NSString
+        let fullRange = NSRange(location: 0, length: nsText.length)
+        var results: [(name: String, amount: ParsedAdditiveAmount?, rawText: String)] = []
+
+        for match in regex.matches(in: text, range: fullRange) {
+            guard let nameRange   = Range(match.range(at: 1), in: text),
+                  let amountRange = Range(match.range(at: 2), in: text),
+                  let unitRange   = Range(match.range(at: 3), in: text),
+                  let matchRange  = Range(match.range,        in: text) else { continue }
+
+            // Preserve kennnummer case as found (normalisation happens in dedup pass)
+            let name      = String(text[nameRange])
             let amountRaw = String(text[amountRange]).trimmingCharacters(in: .whitespaces)
             let unit      = String(text[unitRange])
             let rawText   = String(text[matchRange])
@@ -352,12 +417,22 @@ struct AdditiveDeclarationParser {
             return (.exactMatch, match)
         }
 
-        // 2. E-number match (e.g. "E306" or "E 306")
+        // 2. Old E-number match (e.g. "E306" or "E 306")
         let eNorm = nameLower.replacingOccurrences(of: " ", with: "")
         if eNorm.hasPrefix("e"), eNorm.count >= 4,
            Int(eNorm.dropFirst()) != nil {
             if let match = additives.first(where: {
                 $0.eNumber.lowercased().replacingOccurrences(of: " ", with: "") == eNorm
+            }) {
+                return (.exactMatch, match)
+            }
+        }
+
+        // 2b. New EU 1831/2003 kennnummer match (e.g. "3a300", "1m558", "2b620i")
+        if looksLikeKennnummer(substanceName) {
+            let kNorm = normalizeENumber(substanceName)  // uppercase, strip spaces/*
+            if let match = additives.first(where: {
+                normalizeENumber($0.eNumber) == kNorm
             }) {
                 return (.exactMatch, match)
             }

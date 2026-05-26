@@ -907,4 +907,64 @@ final class AdditiveDeclarationParserTests: XCTestCase {
         XCTAssertTrue(AdditiveDeclarationParser.looksLikeENumber("E 300"))
         XCTAssertFalse(AdditiveDeclarationParser.looksLikeENumber("Taurin"))
     }
+
+    // New EU 1831/2003 kennnummer format detection
+    func testLooksLikeKennnummer() {
+        XCTAssertTrue(AdditiveDeclarationParser.looksLikeKennnummer("3a300"),   "3a300 → kennnummer")
+        XCTAssertTrue(AdditiveDeclarationParser.looksLikeKennnummer("1m558"),   "1m558 → kennnummer")
+        XCTAssertTrue(AdditiveDeclarationParser.looksLikeKennnummer("2b620i"),  "2b620i → trailing letter")
+        XCTAssertTrue(AdditiveDeclarationParser.looksLikeKennnummer("3c322IV"), "3c322IV → Roman numeral suffix")
+        XCTAssertTrue(AdditiveDeclarationParser.looksLikeKennnummer("3c305ii"), "3c305ii → two trailing letters")
+        XCTAssertFalse(AdditiveDeclarationParser.looksLikeKennnummer("E300"),   "E300 → old E-number")
+        XCTAssertFalse(AdditiveDeclarationParser.looksLikeKennnummer("E 306"),  "E 306 → old E-number")
+        XCTAssertFalse(AdditiveDeclarationParser.looksLikeKennnummer("Taurin"), "Taurin → name")
+        XCTAssertFalse(AdditiveDeclarationParser.looksLikeKennnummer("S01"),    "S01 → starts with letter")
+        XCTAssertFalse(AdditiveDeclarationParser.looksLikeKennnummer("12000"),  "12000 → plain number")
+    }
+
+    // New kennnummer is extracted from label text
+    func testKennnummerExtractedFromLabelText() {
+        let text = "Zusatzstoffe: 3a300 200 mg/kg, 1m558 5000 mg/kg"
+        let declarations = AdditiveDeclarationParser.parse(text: text, additives: [])
+        XCTAssertEqual(declarations.count, 2, "Both kennnummern must be extracted")
+        let names = declarations.map(\.substanceName)
+        XCTAssertTrue(names.contains("3a300") || names.contains("3A300"),
+                      "3a300 must appear in declarations")
+        XCTAssertTrue(names.contains("1m558") || names.contains("1M558"),
+                      "1m558 must appear in declarations")
+    }
+
+    // Kennnummer is suppressed when the named substance was found and DB provides the link
+    func testKennnummerSuppressedWhenNameFoundInDB() {
+        let mockAdditive = Additive(
+            eNumber: "3a300",
+            name: "Ascorbinsäure",
+            species: "Alle Tierarten",
+            maxAgeDays: nil, minMgKg: nil, maxMgKg: nil, unit: nil,
+            regulation: nil, sourceFile: nil, sourcePage: nil, animalCategory: nil
+        )
+        let text = "Zusatzstoffe: Ascorbinsäure 200 mg/kg, 3a300 200 mg/kg"
+        let declarations = AdditiveDeclarationParser.parse(text: text, additives: [mockAdditive])
+        XCTAssertEqual(declarations.count, 1,
+                       "Kennnummer must be suppressed when name found via DB")
+        XCTAssertEqual(declarations.first?.substanceName, "Ascorbinsäure")
+    }
+
+    // DB entry with old E-style kennnummer (e.g. "E 310*") — label shows "E 310" → suppress
+    func testOldEStyleKennnummerSuppressedWhenNameFound() {
+        let mockAdditive = Additive(
+            eNumber: "E 310*",
+            name: "Propylgallat",
+            species: "Alle Tierarten",
+            maxAgeDays: nil, minMgKg: nil, maxMgKg: nil, unit: nil,
+            regulation: nil, sourceFile: nil, sourcePage: nil, animalCategory: nil
+        )
+        let text = "Zusatzstoffe: Propylgallat 100 mg/kg, E 310 100 mg/kg"
+        let declarations = AdditiveDeclarationParser.parse(text: text, additives: [mockAdditive])
+        // "Propylgallat" → DB kennnummer "E 310*" → normalised "E310"
+        // "E 310" on label → normalised "E310" → suppressed
+        XCTAssertEqual(declarations.count, 1,
+                       "Old E-style kennnummer must be suppressed when name found via DB")
+        XCTAssertEqual(declarations.first?.substanceName, "Propylgallat")
+    }
 }
