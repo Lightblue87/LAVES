@@ -9,9 +9,10 @@ enum AppTab: Hashable {
 }
 
 struct ContentView: View {
-    @StateObject private var store = AdditiveStore()
-    @StateObject private var labelingStore = LabelingRuleStore()
-    @StateObject private var scanHistory = ScanHistoryService()
+    @StateObject private var store: AdditiveStore
+    @StateObject private var labelingStore: LabelingRuleStore
+    @StateObject private var updateCoordinator: AppUpdateCoordinator
+    @StateObject private var scanHistory: ScanHistoryService
     @State private var selectedTab: AppTab = .scan
     @State private var selectedAdditiveScan: ScanEntry?
     @State private var selectedLabelingScan: ScanEntry?
@@ -19,6 +20,15 @@ struct ContentView: View {
     @State private var initializationProgress = 0.0
     @State private var initializationDetail = "App wird vorbereitet"
     @State private var didInitialize = false
+
+    init() {
+        let s = AdditiveStore()
+        let ls = LabelingRuleStore()
+        _store = StateObject(wrappedValue: s)
+        _labelingStore = StateObject(wrappedValue: ls)
+        _updateCoordinator = StateObject(wrappedValue: AppUpdateCoordinator(additiveStore: s, labelingStore: ls))
+        _scanHistory = StateObject(wrappedValue: ScanHistoryService())
+    }
 
     var body: some View {
         Group {
@@ -78,11 +88,11 @@ struct ContentView: View {
                 .badge(labelingStore.updateAvailable ? 1 : 0)
                 .tag(AppTab.labeling)
 
-            DataStatusView(store: store, labelingStore: labelingStore)
+            DataStatusView(store: store, labelingStore: labelingStore, coordinator: updateCoordinator)
                 .tabItem {
                     Label("Daten", systemImage: "arrow.down.circle")
                 }
-                .badge((store.updateAvailable || labelingStore.updateAvailable) ? 1 : 0)
+                .badge(updateCoordinator.updateAvailable ? 1 : 0)
                 .tag(AppTab.data)
         }
     }

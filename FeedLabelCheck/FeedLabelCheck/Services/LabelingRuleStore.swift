@@ -139,6 +139,31 @@ final class LabelingRuleStore: ObservableObject {
         }
     }
 
+    // MARK: - Coordinator support
+
+    func needsUpdate(entry: LabelingManifestEntry) -> Bool {
+        defaults.string(forKey: shaKey) != entry.sha256
+            || !FileManager.default.fileExists(atPath: localDatabaseURL.path)
+    }
+
+    func installDatabase(from url: URL, entry: LabelingManifestEntry) async throws {
+        let dir = localDatabaseURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        if FileManager.default.fileExists(atPath: localDatabaseURL.path) {
+            try FileManager.default.removeItem(at: localDatabaseURL)
+        }
+        try FileManager.default.moveItem(at: url, to: localDatabaseURL)
+        feedTypes = try repository.loadFeedTypes(from: localDatabaseURL)
+        feedMaterials = try repository.loadFeedMaterials(from: localDatabaseURL)
+        dlgFeedMaterials = try repository.loadDlgFeedMaterials(from: localDatabaseURL)
+        additiveParserConfig = try? repository.loadAdditiveParserConfig(from: localDatabaseURL)
+        dbInfo = try repository.loadDatabaseInfo(from: localDatabaseURL)
+        defaults.set(entry.sha256, forKey: shaKey)
+        updateAvailable = false
+        isLoaded = true
+        loadError = nil
+    }
+
     private func fileSHA256(_ url: URL) throws -> String {
         let data = try Data(contentsOf: url)
         return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()

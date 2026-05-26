@@ -5,6 +5,7 @@ struct DataManifest: Decodable {
     let generatedAt: String
     let recordCount: Int
     let files: Files
+    let labelingDb: LabelingManifestEntry?
 
     struct Files: Decodable {
         let sqlite: File
@@ -20,6 +21,7 @@ struct DataManifest: Decodable {
         case generatedAt = "generated_at"
         case recordCount = "record_count"
         case files
+        case labelingDb = "labeling_db"
     }
 }
 

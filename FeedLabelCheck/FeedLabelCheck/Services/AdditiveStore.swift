@@ -158,6 +158,32 @@ final class AdditiveStore: ObservableObject {
         }
     }
 
+    // MARK: - Coordinator support
+
+    func needsUpdate(manifest: DataManifest) -> Bool {
+        defaults.string(forKey: manifestSHAKey) != manifest.files.sqlite.sha256
+            || !FileManager.default.fileExists(atPath: localDatabaseURL.path)
+    }
+
+    func installDatabase(from url: URL, manifest: DataManifest) async throws {
+        try prepareDataDirectory()
+        _ = try sqliteRepository.loadAdditives(from: url)
+        if FileManager.default.fileExists(atPath: localDatabaseURL.path) {
+            try FileManager.default.removeItem(at: localDatabaseURL)
+        }
+        try FileManager.default.moveItem(at: url, to: localDatabaseURL)
+        let loaded = try sqliteRepository.loadAdditives(from: localDatabaseURL)
+        additives = loaded
+        defaults.set(manifest.files.sqlite.sha256, forKey: manifestSHAKey)
+        defaults.set(manifest.generatedAt, forKey: manifestDateKey)
+        loadError = nil
+        let formattedDate = formattedDataDate(manifest.generatedAt)
+        dataStatus = "SQLite aktualisiert (\(manifest.recordCount) Datensätze, Stand \(formattedDate))"
+        updateAvailable = false
+    }
+
+    // MARK: - Private helpers
+
     private var localDatabaseURL: URL {
         dataDirectory.appendingPathComponent("feedlabelcheck.sqlite")
     }

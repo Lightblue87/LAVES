@@ -3,34 +3,36 @@ import SwiftUI
 struct DataStatusView: View {
     @ObservedObject var store: AdditiveStore
     @ObservedObject var labelingStore: LabelingRuleStore
+    @ObservedObject var coordinator: AppUpdateCoordinator
 
     var body: some View {
         NavigationStack {
             Form {
-
                 // ── Zusatzstoffe-Datenbank ───────────────────────────────
                 additiveSection
 
                 // ── Kennzeichnungsregeln-Datenbank ───────────────────────
                 labelingSection
 
-                // ── Alles auf einmal aktualisieren ───────────────────────
-                if store.updateAvailable || labelingStore.updateAvailable {
-                    Section {
-                        Button {
-                            Task {
-                                async let a: () = store.updateFromRemote()
-                                async let b: () = labelingStore.updateFromRemote()
-                                _ = await (a, b)
-                            }
-                        } label: {
-                            Label("Alles aktualisieren", systemImage: "arrow.clockwise.circle.fill")
-                                .foregroundStyle(.blue)
-                        }
-                        .disabled(store.isUpdating || labelingStore.isUpdating)
-                    } footer: {
-                        Text("Aktualisiert beide Datenbanken gleichzeitig.")
+                // ── Fortschritt während des Updates ─────────────────────
+                if coordinator.isUpdating {
+                    Section("Aktualisierung läuft") {
+                        updateProgressRows
                     }
+                }
+
+                // ── Fehlermeldung ────────────────────────────────────────
+                if let err = coordinator.updateError {
+                    Section {
+                        Text(err).foregroundStyle(.red)
+                    }
+                }
+
+                // ── Zentraler Update-Knopf ───────────────────────────────
+                Section {
+                    updateButton
+                } footer: {
+                    Text("Aktualisiert beide Datenbanken in einem Schritt.")
                 }
             }
             .navigationTitle("Daten")
@@ -52,25 +54,9 @@ struct DataStatusView: View {
                 }
             }
 
-            if store.isUpdating {
-                Section("Aktualisierung – Zusatzstoffe") {
-                    updateProgressRow(detail: store.updateDetail, progress: store.updateProgress)
-                }
-            }
-
             if !store.currentSHA256.isEmpty {
                 Section {
                     sha256Row(store.currentSHA256)
-                }
-            }
-
-            Section {
-                updateButton(
-                    label: "Zusatzstoffe aktualisieren",
-                    isUpdating: store.isUpdating,
-                    updateAvailable: store.updateAvailable
-                ) {
-                    Task { await store.updateFromRemote() }
                 }
             }
         }
@@ -100,53 +86,61 @@ struct DataStatusView: View {
                 }
             }
 
-            if labelingStore.isUpdating {
-                Section("Aktualisierung – Kennzeichnungsregeln") {
-                    updateProgressRow(detail: labelingStore.updateDetail,
-                                      progress: labelingStore.updateProgress)
-                }
-            }
-
             if let sha = labelingStore.dbInfo?.sha256, !sha.isEmpty {
                 Section {
                     sha256Row(sha)
                 }
             }
-
-            Section {
-                updateButton(
-                    label: "Kennzeichnungsregeln aktualisieren",
-                    isUpdating: labelingStore.isUpdating,
-                    updateAvailable: labelingStore.updateAvailable
-                ) {
-                    Task { await labelingStore.updateFromRemote() }
-                }
-            }
         }
     }
 
-    // MARK: - Shared helpers
-
-    private var labelingStatusText: String {
-        if !labelingStore.isLoaded { return "Nicht geladen" }
-        if let info = labelingStore.dbInfo { return info.version }
-        return "Geladen"
-    }
+    // MARK: - Update UI
 
     @ViewBuilder
-    private func updateProgressRow(detail: String?, progress: Double?) -> some View {
-        if let detail {
-            Text(detail)
-                .foregroundStyle(.secondary)
+    private var updateProgressRows: some View {
+        if let d = coordinator.detail {
+            Text(d).foregroundStyle(.secondary)
         }
-        if let progress {
-            ProgressView(value: progress)
-            Text("\(Int(progress * 100)) %")
+        if let p = coordinator.progress {
+            ProgressView(value: p)
+            Text("\(Int(p * 100)) %")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         } else {
             ProgressView()
         }
+    }
+
+    private var updateButton: some View {
+        Button {
+            Task { await coordinator.performUpdate() }
+        } label: {
+            HStack {
+                if coordinator.isUpdating {
+                    Label("Aktualisierung läuft…", systemImage: "arrow.down.circle")
+                } else if coordinator.updateAvailable {
+                    Label("Alles aktualisieren", systemImage: "arrow.down.circle.fill")
+                        .foregroundStyle(.blue)
+                } else {
+                    Label("Auf Aktualisierungen prüfen", systemImage: "arrow.clockwise")
+                }
+                Spacer()
+                if coordinator.updateAvailable && !coordinator.isUpdating {
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .foregroundStyle(.orange)
+                        .imageScale(.small)
+                }
+            }
+        }
+        .disabled(coordinator.isUpdating)
+    }
+
+    // MARK: - Helpers
+
+    private var labelingStatusText: String {
+        if !labelingStore.isLoaded { return "Nicht geladen" }
+        if let info = labelingStore.dbInfo { return info.version }
+        return "Geladen"
     }
 
     @ViewBuilder
@@ -164,33 +158,5 @@ struct DataStatusView: View {
                 Label("SHA-256 kopieren", systemImage: "doc.on.doc")
             }
         }
-    }
-
-    @ViewBuilder
-    private func updateButton(
-        label: String,
-        isUpdating: Bool,
-        updateAvailable: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            HStack {
-                if isUpdating {
-                    Label("Aktualisierung läuft…", systemImage: "arrow.down.circle")
-                } else if updateAvailable {
-                    Label(label, systemImage: "arrow.down.circle.fill")
-                        .foregroundStyle(.blue)
-                } else {
-                    Label(label, systemImage: "arrow.clockwise")
-                }
-                Spacer()
-                if updateAvailable && !isUpdating {
-                    Image(systemName: "exclamationmark.circle.fill")
-                        .foregroundStyle(.orange)
-                        .imageScale(.small)
-                }
-            }
-        }
-        .disabled(isUpdating)
     }
 }

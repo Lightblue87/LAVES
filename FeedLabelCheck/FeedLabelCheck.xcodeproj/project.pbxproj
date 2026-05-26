@@ -56,6 +56,7 @@
 		9A000001000000000000008E /* Services/FeedMaterialLookupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A000001000000000000008F /* Services/FeedMaterialLookupService.swift */; };
 		9A0000010000000000000092 /* Services/DlgLabelingParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000093 /* Services/DlgLabelingParser.swift */; };
 		9A0000010000000000000094 /* Services/DlgLabelingCheckService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000095 /* Services/DlgLabelingCheckService.swift */; };
+		9A0000010000000000000096 /* Services/AppUpdateCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A0000010000000000000097 /* Services/AppUpdateCoordinator.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -120,6 +121,7 @@
 		9A000001000000000000008F /* Services/FeedMaterialLookupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/FeedMaterialLookupService.swift; sourceTree = "<group>"; };
 		9A0000010000000000000093 /* Services/DlgLabelingParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/DlgLabelingParser.swift; sourceTree = "<group>"; };
 		9A0000010000000000000095 /* Services/DlgLabelingCheckService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/DlgLabelingCheckService.swift; sourceTree = "<group>"; };
+		9A0000010000000000000097 /* Services/AppUpdateCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/AppUpdateCoordinator.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -208,6 +210,7 @@
 				9A000001000000000000008F /* Services/FeedMaterialLookupService.swift */,
 				9A0000010000000000000093 /* Services/DlgLabelingParser.swift */,
 				9A0000010000000000000095 /* Services/DlgLabelingCheckService.swift */,
+				9A0000010000000000000097 /* Services/AppUpdateCoordinator.swift */,
 			);
 			path = FeedLabelCheck;
 			sourceTree = "<group>";
@@ -367,6 +370,7 @@
 				9A000001000000000000008E /* Services/FeedMaterialLookupService.swift in Sources */,
 				9A0000010000000000000092 /* Services/DlgLabelingParser.swift in Sources */,
 				9A0000010000000000000094 /* Services/DlgLabelingCheckService.swift in Sources */,
+				9A0000010000000000000096 /* Services/AppUpdateCoordinator.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
