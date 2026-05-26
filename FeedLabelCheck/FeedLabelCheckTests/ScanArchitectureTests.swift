@@ -63,6 +63,16 @@ final class ScanArchitectureTests: XCTestCase {
                     "supplementary feed for",
                     "aanvullend diervoeder"
                 ]
+            ),
+            LabelingFeedType(
+                id: "mineral_feed",
+                nameDe: "Mineralfuttermittel",
+                descriptionDe: nil,
+                keywordsDe: [
+                    "Mineralfuttermittel",
+                    "Mineral-Futtermittel",
+                    "Mineralfutter"
+                ]
             )
         ]
     }
@@ -270,6 +280,28 @@ final class ScanArchitectureTests: XCTestCase {
         XCTAssertTrue(result.detectedSpeciesHints.contains("Pferd"))
         XCTAssertTrue(result.additiveHints.hasStructuredDeclarations)
         XCTAssertTrue(result.labelingAreas.hasAdditives)
+    }
+
+    func testAlpengruenMashKeepsComplementaryFeedDespiteMineralRecommendation() {
+        let text = """
+        AlpenGrün Mash
+        Ergänzungsfuttermittel für Pferde nach GMP+ FSA gesichert
+        Zusammensetzung Wiesengräser und -kräuter, Leinkuchen, Apfeltrester.
+        Analytische Bestandteile Rohprotein 13,0 %, Rohfett 4,1 %, Rohfaser 20,3 %.
+        Zur Mineralstoffversorgung empfehlen wir ein zu Ihrem Pferd und seinem Bedarf
+        passendes AGROBS Mineralfutter. Chargennummer: 01102000040327.
+        Mindestens haltbar bis: 04.09.2026. 5kg
+        """
+
+        let result = ScanAnalysisService.analyze(mergedText: text, imageItems: nil, feedTypes: feedTypes)
+
+        XCTAssertEqual(result.detectedFeedTypeId, "complementary_feed")
+        XCTAssertTrue(result.detectedSpeciesHints.contains("Pferd"))
+        XCTAssertTrue(result.labelingAreas.hasComposition)
+        XCTAssertTrue(result.labelingAreas.hasAnalyticalConstituents)
+        XCTAssertTrue(result.labelingAreas.hasLotNumber)
+        XCTAssertTrue(result.labelingAreas.hasBestBefore)
+        XCTAssertTrue(result.labelingAreas.hasNetQuantity)
     }
 
     // MARK: - Image coverage
