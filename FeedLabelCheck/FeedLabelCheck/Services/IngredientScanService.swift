@@ -146,7 +146,9 @@ struct IngredientScanService {
             DetectedAnimal(label: "Ziege", tokens: ["ziege", "ziegen", "goat", "goats"], requiresFeedContext: true),
             DetectedAnimal(label: "Pferd", tokens: ["pferd", "pferde", "fohlen", "horse", "horses", "foal"], requiresFeedContext: false),
             DetectedAnimal(label: "Fisch", tokens: ["fisch", "fische", "lachs", "forelle", "karpfen", "fish", "salmon", "trout", "carp"], requiresFeedContext: true),
-            DetectedAnimal(label: "Kaninchen", tokens: ["kaninchen", "rabbit", "rabbits"], requiresFeedContext: false)
+            DetectedAnimal(label: "Kaninchen", tokens: ["kaninchen", "zwergkaninchen", "rabbit", "rabbits"], requiresFeedContext: false),
+            DetectedAnimal(label: "Meerschweinchen", tokens: ["meerschweinchen", "guinea pig", "guinea pigs", "cavy", "cavies"], requiresFeedContext: false),
+            DetectedAnimal(label: "Nager", tokens: ["nager", "nagern", "nagetier", "nagetiere", "rongeur", "rongeurs", "rodent", "rodents", "roditori"], requiresFeedContext: false)
         ]
     }
 

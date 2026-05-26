@@ -16,27 +16,48 @@ import Foundation
 struct AdditiveDeclarationParser {
 
     // MARK: - Section headers (longest first to avoid sub-string shadowing)
+    // These are the built-in defaults; the DB can supply an updated list via AdditiveParserConfig.
 
-    private static let sectionHeaders: [String] = [
+    static let defaultSectionHeaders: [String] = [
+        // German — with "/kg" suffix variant common on multi-language EU labels
+        // e.g. "Zusatzstoffe: Ernährungsphysiologische Zusatzstoffe/kg: Vitamin A …"
+        "Ernährungsphysiologische Zusatzstoffe/kg",
         "Ernährungsphysiologische Zusatzstoffe",
+        "Zootechnische Zusatzstoffe/kg",
         "Zootechnische Zusatzstoffe",
+        "Technologische Zusatzstoffe/kg",
         "Technologische Zusatzstoffe",
+        "Sensorische Zusatzstoffe/kg",
         "Sensorische Zusatzstoffe",
         "Zusatzstoff(e):",
+        "Zusatzstoffe/kg:",
         "Zusatzstoffe:",
         "Zusatzstoffe",
         "Zusatzstoff:",
         "Zusatzstoff",
+        // English — IAMS Naturally uses "Additives per kg:", Felix uses "additives"
+        "nutritional additives",
+        "zootechnical additives",
+        "technological additives",
+        "sensory additives",
+        "additives per kg:",
+        "additives per kg",
+        "additives:",
     ]
 
     // MARK: - Analytical-constituent exclusion list
     // Substances that must NOT be treated as Zusatzstoffe declarations
     // (they appear in the "Analytische Bestandteile" section).
-    private static let analyticalPrefixes: [String] = [
-        "rohprotein", "rohfett", "rohfaser", "rohasche", "feuchtigkeit",
+    // These are the built-in defaults; the DB can supply an updated list via AdditiveParserConfig.
+    static let defaultAnalyticalPrefixes: [String] = [
+        "rohprotein", "rohfett", "rohfaser", "rohasche",
+        "feuchtegehalt", "feuchtigkeit", "feuchte",
         "natrium", "phosphor", "stärke", "zucker", "kalium", "chlorid",
+        "linolsaure", "linolsäure",
         "crude protein", "crude fat", "crude fibre", "crude ash", "moisture",
         "metabolisierbare", "umsetzbare",
+        // Omega-fatty acids (appear in Analytische Bestandteile, not Zusatzstoffe)
+        "omega",
     ]
 
     // MARK: - Compiled patterns (built once)
@@ -46,10 +67,13 @@ struct AdditiveDeclarationParser {
         // Name: capital-start word ≥3 chars, optionally followed by 1 more word
         //       (handles "Vitamin A", "Vitamin D3", single words like "Taurin")
         // Amount: digit followed by up to 9 more digits/separators/spaces
-        // Unit: all recognised units
+        // Unit: explicit per-kg units OR bare units when /kg is in the section header
+        //       Bare mg/IE/IU/µg/g are common on multi-language EU labels where the
+        //       section header already contains "/kg" (e.g. "Zusatzstoffe/kg: Taurin 570mg")
+        //       Longer forms come first to avoid "mg" matching inside "mg/kg".
         let nameGroup = #"([A-Za-zÄÖÜäöüß][A-Za-zÄÖÜäöüß\-]{2,}(?:\s+[A-Za-zÄÖÜäöüß0-9][A-Za-zÄÖÜäöüß0-9\-]*)?)"#
         let amountGroup = #"(\d[\d\.,\s]{0,9})"#
-        let unitGroup   = #"(mg/kg|g/kg|IE/kg|IU/kg|KBE/kg|CFU/kg|µg/kg|mg/l|%)"#
+        let unitGroup   = #"(mg/kg|g/kg|IE/kg|IU/kg|KBE/kg|CFU/kg|µg/kg|mg/l|%|mg|IE|IU|µg|\bg\b)"#
         let pattern = nameGroup + #"\s+"# + amountGroup + #"\s*"# + unitGroup
         return try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
     }()
@@ -67,8 +91,8 @@ struct AdditiveDeclarationParser {
 
     /// Returns `true` when the text contains at least one structured additive
     /// declaration (substance name + numeric amount + unit) — no DB lookup needed.
-    static func hasStructuredDeclaration(in text: String) -> Bool {
-        !extractRawEntries(from: text).isEmpty
+    static func hasStructuredDeclaration(in text: String, config: AdditiveParserConfig? = nil) -> Bool {
+        !extractRawEntries(from: text, config: config).isEmpty
     }
 
     /// Parses all additive declarations from OCR text and matches them against
@@ -77,9 +101,10 @@ struct AdditiveDeclarationParser {
     /// - Parameters:
     ///   - text:      The (merged, deduplicated) OCR text from the label.
     ///   - additives: Loaded additive database entries for DB matching.
+    ///   - config:    Optional DB-driven parser config; falls back to built-in defaults when nil.
     /// - Returns: Parsed and DB-matched declarations, deduplicated by substance name.
-    static func parse(text: String, additives: [Additive]) -> [AdditiveDeclaration] {
-        let rawEntries = extractRawEntries(from: text)
+    static func parse(text: String, additives: [Additive], config: AdditiveParserConfig? = nil) -> [AdditiveDeclaration] {
+        let rawEntries = extractRawEntries(from: text, config: config)
         guard !rawEntries.isEmpty else { return [] }
 
         // Deduplicate by normalised substance name
@@ -102,10 +127,11 @@ struct AdditiveDeclarationParser {
     // MARK: - Raw entry extraction
 
     private static func extractRawEntries(
-        from text: String
+        from text: String,
+        config: AdditiveParserConfig? = nil
     ) -> [(name: String, amount: ParsedAdditiveAmount?, rawText: String)] {
         var results: [(name: String, amount: ParsedAdditiveAmount?, rawText: String)] = []
-        results.append(contentsOf: extractFromSections(text))
+        results.append(contentsOf: extractFromSections(text, config: config))
         results.append(contentsOf: extractENumberEntries(text))
         return results
     }
@@ -113,12 +139,16 @@ struct AdditiveDeclarationParser {
     // MARK: - Section-based extraction
 
     private static func extractFromSections(
-        _ text: String
+        _ text: String,
+        config: AdditiveParserConfig? = nil
     ) -> [(name: String, amount: ParsedAdditiveAmount?, rawText: String)] {
+        let headers = config?.sectionHeaders.isEmpty == false
+            ? config!.sectionHeaders
+            : defaultSectionHeaders
         let textLower = text.lowercased()
         var sectionStarts: [String.Index] = []
 
-        for header in sectionHeaders {
+        for header in headers {
             var searchAt = textLower.startIndex
             let headerLower = header.lowercased()
             while let range = textLower.range(of: headerLower,
@@ -141,8 +171,11 @@ struct AdditiveDeclarationParser {
             } else {
                 end = text.index(start, offsetBy: 800, limitedBy: text.endIndex) ?? text.endIndex
             }
+            let exclusions = config?.analyticalExclusions.isEmpty == false
+                ? config!.analyticalExclusions
+                : defaultAnalyticalPrefixes
             let sectionText = String(text[start..<end])
-            results.append(contentsOf: applyEntryRegex(entryRegex, to: sectionText))
+            results.append(contentsOf: applyEntryRegex(entryRegex, to: sectionText, exclusions: exclusions))
         }
         return results
     }
@@ -183,7 +216,8 @@ struct AdditiveDeclarationParser {
 
     private static func applyEntryRegex(
         _ regex: NSRegularExpression?,
-        to text: String
+        to text: String,
+        exclusions: [String]
     ) -> [(name: String, amount: ParsedAdditiveAmount?, rawText: String)] {
         guard let regex else { return [] }
         let nsText = text as NSString
@@ -201,7 +235,7 @@ struct AdditiveDeclarationParser {
             let unit      = String(text[unitRange])
             let rawText   = String(text[matchRange])
 
-            guard !isAnalyticalConstituent(name) else { continue }
+            guard !isAnalyticalConstituent(name, exclusions: exclusions) else { continue }
 
             let parsed = parseNumber(amountRaw).map {
                 ParsedAdditiveAmount(value: $0, unit: unit, rawText: amountRaw)
@@ -253,9 +287,9 @@ struct AdditiveDeclarationParser {
 
     // MARK: - Analytical-constituent filter
 
-    private static func isAnalyticalConstituent(_ name: String) -> Bool {
+    private static func isAnalyticalConstituent(_ name: String, exclusions: [String]) -> Bool {
         let normalized = name.lowercased().replacingOccurrences(of: "-", with: "")
-        return analyticalPrefixes.contains { normalized.hasPrefix($0) }
+        return exclusions.contains { normalized.hasPrefix($0) }
     }
 
     // MARK: - DB matching

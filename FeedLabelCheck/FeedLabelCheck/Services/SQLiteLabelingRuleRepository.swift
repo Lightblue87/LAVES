@@ -7,6 +7,7 @@ protocol LabelingRuleRepository {
     func loadDatabaseInfo(from url: URL) throws -> LabelingDatabaseInfo
     func loadFeedMaterials(from url: URL) throws -> [FeedMaterial]
     func loadDlgFeedMaterials(from url: URL) throws -> [DlgFeedMaterial]
+    func loadAdditiveParserConfig(from url: URL) throws -> AdditiveParserConfig
 }
 
 struct SQLiteLabelingRuleRepository: LabelingRuleRepository {
@@ -199,6 +200,39 @@ struct SQLiteLabelingRuleRepository: LabelingRuleRepository {
             ))
         }
         return result
+    }
+
+    func loadAdditiveParserConfig(from url: URL) throws -> AdditiveParserConfig {
+        let db = try openReadonly(url)
+        defer { sqlite3_close(db) }
+
+        // section headers — graceful fallback if table absent
+        var headers: [String] = []
+        if table("additive_section_headers", hasColumn: "header", db: db) {
+            let sql = "SELECT header FROM additive_section_headers ORDER BY sort_order, id"
+            var stmt: OpaquePointer?
+            if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+                defer { sqlite3_finalize(stmt) }
+                while sqlite3_step(stmt) == SQLITE_ROW {
+                    if let h = text(stmt, 0) { headers.append(h) }
+                }
+            }
+        }
+
+        // analytical exclusions
+        var exclusions: [String] = []
+        if table("additive_exclusions", hasColumn: "prefix", db: db) {
+            let sql = "SELECT prefix FROM additive_exclusions ORDER BY id"
+            var stmt: OpaquePointer?
+            if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+                defer { sqlite3_finalize(stmt) }
+                while sqlite3_step(stmt) == SQLITE_ROW {
+                    if let p = text(stmt, 0) { exclusions.append(p) }
+                }
+            }
+        }
+
+        return AdditiveParserConfig(sectionHeaders: headers, analyticalExclusions: exclusions)
     }
 
     // MARK: - Private helpers

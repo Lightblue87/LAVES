@@ -199,3 +199,12 @@ struct LabelingDatabaseInfo {
     let totalRuleCount: Int
     let sha256: String
 }
+
+// MARK: - Additive Parser Config
+
+/// Configurable pattern data for AdditiveDeclarationParser, loaded from the database.
+/// Falls back to built-in defaults when nil is passed to the parser.
+struct AdditiveParserConfig {
+    let sectionHeaders: [String]
+    let analyticalExclusions: [String]
+}

@@ -822,3 +822,51 @@ final class LabelingControlComparisonServiceTests: XCTestCase {
         )
     }
 }
+
+// MARK: - G) AdditiveDeclarationParser unit tests
+
+final class AdditiveDeclarationParserTests: XCTestCase {
+
+    // Regression for Codex P2 review comment: bare `g` unit must be recognised
+    // when the section header already contains "/kg"
+    // (e.g. "Zusatzstoffe/kg: L-Carnitin 0,5 g")
+    func testBareGramUnitParsedInPerKgSection() {
+        let text = "Zusatzstoffe/kg: L-Carnitin 0,5 g"
+        XCTAssertTrue(AdditiveDeclarationParser.hasStructuredDeclaration(in: text),
+                      "L-Carnitin with bare 'g' unit in /kg section should be recognised")
+        let declarations = AdditiveDeclarationParser.parse(text: text, additives: [])
+        XCTAssertFalse(declarations.isEmpty, "parse() should return at least one declaration")
+        if let first = declarations.first {
+            XCTAssertTrue(first.substanceName.lowercased().contains("carnitin"),
+                          "Substance name should contain 'carnitin', got '\(first.substanceName)'")
+            XCTAssertEqual(first.amount?.unit, "g")
+            if let value = first.amount?.value {
+                XCTAssertEqual(value, 0.5, accuracy: 0.001)
+            } else {
+                XCTFail("amount.value should not be nil")
+            }
+        }
+    }
+
+    // Existing bare mg unit — must not regress
+    func testBareMgUnitParsedInPerKgSection() {
+        let text = "Zusatzstoffe/kg: Taurin 570 mg"
+        XCTAssertTrue(AdditiveDeclarationParser.hasStructuredDeclaration(in: text))
+        let declarations = AdditiveDeclarationParser.parse(text: text, additives: [])
+        XCTAssertFalse(declarations.isEmpty)
+        XCTAssertEqual(declarations.first?.amount?.unit, "mg")
+        if let value = declarations.first?.amount?.value {
+            XCTAssertEqual(value, 570.0, accuracy: 0.001)
+        } else {
+            XCTFail("amount.value should not be nil")
+        }
+    }
+
+    // g/kg (explicit) must still parse — g/kg comes before \bg\b in the alternation
+    func testGramPerKgUnitNotAffected() {
+        let text = "Zusatzstoffe: Vitamin E 300 mg/kg"
+        let declarations = AdditiveDeclarationParser.parse(text: text, additives: [])
+        XCTAssertFalse(declarations.isEmpty)
+        XCTAssertEqual(declarations.first?.amount?.unit, "mg/kg")
+    }
+}

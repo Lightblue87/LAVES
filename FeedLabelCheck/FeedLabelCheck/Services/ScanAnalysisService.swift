@@ -96,12 +96,16 @@ struct ScanAnalysisService {
         ])
         let hasLot = kw([
             "Charge:", "Losnummer", "Chargennummer", "LOT", "Los:", "Partie:",
+            "Partienummer", "Bezugsnummer der Partie",
             "lot number", "batch number", "numéro de lot"
         ])
         let hasNetQty = kw([
             "Nettomasse", "Nettogewicht", "Nettomenge", "Netto",
             "net weight", "net contents", "poids net", "peso netto"
-        ])
+        ]) || text.range(
+            of: #"\b\d+[,.]?\d*\s?(kg|g|t|ml|l)\s?e?\b"#,
+            options: [.regularExpression, .caseInsensitive]
+        ) != nil
         let hasOperator = kw([
             "GmbH", "GmbH & Co", " KG", " AG ", "Ltd.", "S.A.",
             "Hersteller:", "Vertrieb:", "Inverkehrbringer:", "verantwortlich:",
