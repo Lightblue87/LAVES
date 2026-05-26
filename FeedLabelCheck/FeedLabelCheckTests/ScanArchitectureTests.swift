@@ -33,7 +33,13 @@ final class ScanArchitectureTests: XCTestCase {
                     "Alleinfuttermittel",
                     "complete pet food",
                     "complete feed",
-                    "aliment complet"
+                    "aliment complet",
+                    // Now stored in DB (previously hardcoded in expandedKeywords())
+                    "Diät-Alleinfuttermittel",
+                    "Diaet-Alleinfuttermittel",
+                    "Diät Alleinfuttermittel",
+                    "complete nutrition",
+                    "100% complete nutrition"
                 ]
             ),
             LabelingFeedType(
@@ -45,7 +51,13 @@ final class ScanArchitectureTests: XCTestCase {
                     "complementary pet food",
                     "complementary feed",
                     "aliment complémentaire",
-                    "alimento complementare"
+                    "alimento complementare",
+                    // Now stored in DB (previously hardcoded in expandedKeywords())
+                    "Ergänzungsfutermittel",
+                    "Ergaenzungsfutermittel",
+                    "Ergänzungsfuttermitel",
+                    "Ergaenzungsfuttermitel",
+                    "Ergaenzungsfuttermittel"
                 ]
             )
         ]
