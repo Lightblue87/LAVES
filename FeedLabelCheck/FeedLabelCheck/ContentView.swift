@@ -95,7 +95,7 @@ struct ContentView: View {
                 .badge(updateCoordinator.updateAvailable ? 1 : 0)
                 .tag(AppTab.data)
         }
-        .dismissKeyboardOnTap()
+        .installKeyboardDismissOnTap()
     }
 
     private func initializeAppIfNeeded() async {
