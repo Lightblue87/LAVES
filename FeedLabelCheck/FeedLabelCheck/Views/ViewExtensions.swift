@@ -35,7 +35,9 @@ struct KeyboardDismissInstaller: UIViewRepresentable {
             super.didMoveToWindow()
             guard let window, tapGR == nil else { return }
             let gr = UITapGestureRecognizer(target: self, action: #selector(handleTap))
-            gr.cancelsTouchesInView = false   // ← touches still reach all targets
+            gr.cancelsTouchesInView = false   // touches still reach all targets
+            gr.delaysTouchesBegan   = false   // no delay before touch-down — keeps UI snappy
+            gr.delaysTouchesEnded   = false   // no delay after touch-up — fixes keyboard lag
             window.addGestureRecognizer(gr)
             tapGR = gr
             installedWindow = window
