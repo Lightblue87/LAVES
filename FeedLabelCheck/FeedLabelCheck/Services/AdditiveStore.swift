@@ -54,8 +54,12 @@ final class AdditiveStore: ObservableObject {
         guard additives.isEmpty else { return }
 
         if FileManager.default.fileExists(atPath: localDatabaseURL.path) {
+            let url = localDatabaseURL  // capture value type before leaving MainActor
             do {
-                additives = try sqliteRepository.loadAdditives(from: localDatabaseURL)
+                let loaded = try await Task.detached(priority: .userInitiated) {
+                    try SQLiteAdditiveRepository().loadAdditives(from: url)
+                }.value
+                additives = loaded
                 loadError = nil
                 dataStatus = localDataStatus(prefix: "Lokale SQLite-Datenbank")
                 Task { await checkForUpdates() }
@@ -71,8 +75,11 @@ final class AdditiveStore: ObservableObject {
         }
 
         do {
-            let data = try Data(contentsOf: url)
-            additives = try JSONDecoder().decode([Additive].self, from: data)
+            let loaded = try await Task.detached(priority: .userInitiated) {
+                let data = try Data(contentsOf: url)
+                return try JSONDecoder().decode([Additive].self, from: data)
+            }.value
+            additives = loaded
             loadError = nil
             dataStatus = "Bundle-Daten geladen (\(additives.count) Datensätze)"
             Task { await checkForUpdates() }

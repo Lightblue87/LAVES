@@ -47,11 +47,22 @@ final class LabelingRuleStore: ObservableObject {
         }
 
         do {
-            feedTypes = try repository.loadFeedTypes(from: url)
-            feedMaterials = try repository.loadFeedMaterials(from: url)
-            dlgFeedMaterials = try repository.loadDlgFeedMaterials(from: url)
-            additiveParserConfig = try? repository.loadAdditiveParserConfig(from: url)
-            dbInfo = try repository.loadDatabaseInfo(from: url)
+            // Run all synchronous SQLite reads off the main thread to avoid watchdog kill on launch.
+            let result = try await Task.detached(priority: .userInitiated) {
+                let repo = SQLiteLabelingRuleRepository()
+                return try (
+                    feedTypes:           repo.loadFeedTypes(from: url),
+                    feedMaterials:       repo.loadFeedMaterials(from: url),
+                    dlgFeedMaterials:    repo.loadDlgFeedMaterials(from: url),
+                    additiveParserConfig: try? repo.loadAdditiveParserConfig(from: url),
+                    dbInfo:              repo.loadDatabaseInfo(from: url)
+                )
+            }.value
+            feedTypes = result.feedTypes
+            feedMaterials = result.feedMaterials
+            dlgFeedMaterials = result.dlgFeedMaterials
+            additiveParserConfig = result.additiveParserConfig
+            dbInfo = result.dbInfo
             loadError = nil
             isLoaded = true
             Task { await checkForUpdates() }
