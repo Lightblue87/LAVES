@@ -113,11 +113,11 @@ struct ContentView: View {
         initializationDetail = "Kennzeichnungsregeln laden"
         await labelingStore.load()
 
-        initializationProgress = 0.9
-        initializationDetail = "Scan-Historie vorbereiten"
-        await Task.yield()
+        initializationProgress = 0.85
+        initializationDetail = "Auf Aktualisierungen prüfen"
+        Task { await updateCoordinator.checkForUpdates() }  // fire-and-forget; badge updates when done
 
-        initializationProgress = 1.0
+        initializationProgress = 0.95
         initializationDetail = "Bereit"
 
         try? await Task.sleep(for: .milliseconds(180))

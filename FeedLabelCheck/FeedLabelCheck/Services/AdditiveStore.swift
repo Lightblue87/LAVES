@@ -14,7 +14,7 @@ final class AdditiveStore: ObservableObject {
     @Published private(set) var isUpdating = false
     @Published private(set) var updateProgress: Double?
     @Published private(set) var updateDetail: String?
-    @Published private(set) var updateAvailable = false
+    @Published var updateAvailable = false
 
     private let downloader = DataDownloadService()
     private let sqliteRepository = SQLiteAdditiveRepository()
@@ -62,7 +62,6 @@ final class AdditiveStore: ObservableObject {
                 additives = loaded
                 loadError = nil
                 dataStatus = localDataStatus(prefix: "Lokale SQLite-Datenbank")
-                Task { await checkForUpdates() }
                 return
             } catch {
                 loadError = "Lokale Datenbank konnte nicht gelesen werden: \(error.localizedDescription)"
@@ -82,7 +81,6 @@ final class AdditiveStore: ObservableObject {
             additives = loaded
             loadError = nil
             dataStatus = "Bundle-Daten geladen (\(additives.count) Datensätze)"
-            Task { await checkForUpdates() }
         } catch {
             loadError = "Daten konnten nicht geladen werden: \(error.localizedDescription)"
         }

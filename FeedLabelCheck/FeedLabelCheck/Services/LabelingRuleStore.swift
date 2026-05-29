@@ -13,7 +13,7 @@ final class LabelingRuleStore: ObservableObject {
     @Published private(set) var isUpdating = false
     @Published private(set) var updateProgress: Double?
     @Published private(set) var updateDetail: String?
-    @Published private(set) var updateAvailable = false
+    @Published var updateAvailable = false
 
     private let repository: LabelingRuleRepository = SQLiteLabelingRuleRepository()
     private let downloader = LabelingDownloadService()
@@ -65,7 +65,6 @@ final class LabelingRuleStore: ObservableObject {
             dbInfo = result.dbInfo
             loadError = nil
             isLoaded = true
-            Task { await checkForUpdates() }
         } catch {
             loadError = "Kennzeichnungsregeln konnten nicht geladen werden: \(error.localizedDescription)"
         }

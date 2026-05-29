@@ -31,7 +31,25 @@ final class AppUpdateCoordinator: ObservableObject {
             .store(in: &cancellables)
     }
 
-    // MARK: - Update
+    // MARK: - Startup check
+
+    /// Fetches the manifest once and updates both stores' `updateAvailable` flags.
+    /// Called once after both stores finish loading — replaces the two independent
+    /// per-store background checks so only one network request goes out at startup.
+    func checkForUpdates() async {
+        guard !isUpdating else { return }
+        do {
+            let manifest = try await downloader.fetchManifest()
+            additiveStore.updateAvailable = additiveStore.needsUpdate(manifest: manifest)
+            if let ldb = manifest.labelingDb {
+                labelingStore.updateAvailable = labelingStore.needsUpdate(entry: ldb)
+            }
+        } catch {
+            // Silent background check — badge stays unchanged on error
+        }
+    }
+
+    // MARK: - Full update
 
     func performUpdate() async {
         guard !isUpdating else { return }
