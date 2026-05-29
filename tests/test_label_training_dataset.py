@@ -1,12 +1,39 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
 
 
-DATASET_ROOT = Path(__file__).parent.parent / "feedlabelcheck_label_training"
+REPO_ROOT = Path(__file__).parent.parent
+
+
+def _candidate_dataset_roots() -> list[Path]:
+    roots: list[Path] = []
+    if env_root := os.environ.get("FEEDLABELCHECK_LABEL_TRAINING_ROOT"):
+        roots.append(Path(env_root))
+    if data_repo := os.environ.get("FEEDLABELCHECK_DATA_REPO"):
+        roots.extend([Path(data_repo) / "label_training", Path(data_repo)])
+    roots.extend(
+        [
+            REPO_ROOT.parent / "FeedLabelCheck-Data" / "label_training",
+            REPO_ROOT.parent / "FeedLabelCheck-Data",
+            REPO_ROOT / "feedlabelcheck_label_training",
+        ]
+    )
+    return roots
+
+
+def _find_dataset_root() -> Path:
+    for root in _candidate_dataset_roots():
+        if (root / "ground_truth_starter.json").exists():
+            return root
+    return REPO_ROOT / "feedlabelcheck_label_training"
+
+
+DATASET_ROOT = _find_dataset_root()
 GROUND_TRUTH = DATASET_ROOT / "ground_truth_starter.json"
 
 

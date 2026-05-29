@@ -66,6 +66,15 @@ class TestFeedTypeDetection:
     def test_complementary_feed_detected(self):
         assert "complementary_feed" in self._detect("Ergänzungsfuttermittel für Schweine")
 
+    def test_raufutterergaenzung_detected(self):
+        assert "complementary_feed" in self._detect("Pavo WeightLift ist eine Raufutterergänzung für Pferde")
+
+    def test_supplementary_feed_detected(self):
+        assert "complementary_feed" in self._detect("Supplementary feed for horses")
+
+    def test_dutch_complementary_feed_detected(self):
+        assert "complementary_feed" in self._detect("Aanvullend diervoeder voor paarden")
+
     def test_single_feed_detected(self):
         assert "single_feed" in self._detect("Einzelfuttermittel: Weizenmehl")
 
@@ -99,7 +108,7 @@ class TestFeedTypeDetection:
 LOT_PATTERNS = [
     # 1. Standard short keyword + compact code (at least one digit required)
     #    (?!\w) prevents matching inside compound words (e.g. "Chargenangabe")
-    r"\b(LOT|L|Charge|Chargen-Nr\.?|Los|Partie)(?!\w)\s?[:\-]?\s?[A-Z0-9\-\/]*\d[A-Z0-9\-\/]*\b",
+    r"\b(LOT|L|Charge|Chargen|Chargen-Nr\.?|Chargennummer|Los|Losnummer|Los-Nr\.?|Partie|Partienummer|Partie-Nr\.?|Partie\s+Nr\.?)(?!\w)\s*[:\-]?\s*[A-Z0-9\-\/]*\d[A-Z0-9\-\/]*\b",
     # 2. Long-form labels: Zulassungsnummer / Kennnummer der Partie + space-separated code
     #    Requires ≥4 digits → prevents matching "siehe Boden-Aufdruck" (no digits)
     r"\b(?:Zulassungsnummer|Kennnummer)\s+der\s+Partie\s*[:\-]?\s*[A-Z]{1,5}\s*\d{4,}[A-Z0-9]*\b",
@@ -117,8 +126,12 @@ class TestLotNumberPattern:
             ("LOT 20240901A", True),
             ("L: XYZ123", True),
             ("Partie: P2024/05", True),
+            ("Partienummer 2806088", True),
             ("Chargen-Nr. 20240501-001", True),
+            ("Chargennummer: 01102000040327", True),
+            ("Chargen\n01102000040327", True),
             ("Los: 4567", True),
+            ("Los Nr. und MHD Ende: siehe Aufdruck", False),
             # "Chargenangabe" is a compound word — "Charge" has no \b after it here.
             # The keyword "Chargenangabe:" at weight 0.7 still gives probablyFound.
             ("Chargenangabe: A2024", False),
@@ -171,8 +184,11 @@ class TestNetQuantityPattern:
 BBD_PATTERNS = [
     # German/general: standard abbreviations + concrete DD.MM.YYYY date
     # Includes "haltbar bis" (without "mindestens") for "-18°C haltbar bis: 09.12.26"
-    r"\b(MHD|BBD|mindestens haltbar bis|haltbar bis|verwendbar bis)"
+    r"\b(MHD|BBD|mindestens haltbar bis|mindesthaltbar bis|haltbar bis|verwendbar bis)"
     r"[:\s]*\d{1,2}[\.\/\-]\d{1,2}[\.\/\-]\d{2,4}\b",
+    # German/general: MM/YYYY without day
+    r"\b(MHD|BBD|mindestens haltbar bis|mindesthaltbar bis|haltbar bis|verwendbar bis)"
+    r"[:\s]*\d{1,2}[\/\-]\d{4}\b",
     # English/international: EXP / BBE + concrete date
     # Covers "EXP: 29.11.2026" and "BBE 01.03.2027"
     r"\b(EXP|BBE|best before|use before|use by|expiry|expiration)"
@@ -181,6 +197,7 @@ BBD_PATTERNS = [
 BBD_KEYWORDS = [
     "Mindesthaltbarkeit",
     "mindestens haltbar bis",
+    "Mindesthaltbar bis",
     "MHD",
     "best before",
     "verwendbar bis",
@@ -197,9 +214,10 @@ class TestBestBeforePattern:
         [
             ("MHD: 31.12.2025", True),
             ("mindestens haltbar bis 31.12.2025", True),
-            # ISO / partial formats not matched by the German-date regex — expected False
+            ("Mindesthaltbar bis: 20.10.2027", True),
+            # ISO format not matched by the German-date regex — expected False
             ("BBD 2025-12-31", False),
-            ("mindestens haltbar bis 01/2026", False),
+            ("mindestens haltbar bis 01/2026", True),
             ("best before 12/2025", False),
             ("Kein Ablaufdatum vorhanden", False),
             # Real-packaging additions (Kennzeichnungen.pdf)
@@ -218,6 +236,7 @@ class TestBestBeforePattern:
             ("Mindesthaltbarkeit: 31.12.2025", True),
             ("MHD 01.06.2026", True),
             ("haltbar bis Ende 2025", True),
+            ("Mindesthaltbar bis: 20.10.2027", True),
             ("Kein Datum angegeben", False),
         ],
     )
@@ -653,6 +672,15 @@ class TestRealWorldLabels:
     def test_hundefutter_implies_tierart_pet(self) -> None:
         assert self._matches("art17_001_pet", "Hundefutter für Welpen")
 
+    def test_horse_supplementary_feed_implies_tierart(self) -> None:
+        assert self._matches("art17_001_complementary", "Supplementary feed for horses")
+
+    def test_dutch_paarden_implies_tierart(self) -> None:
+        assert self._matches("art17_001_complementary", "Aanvullend diervoeder voor paarden")
+
+    def test_single_feed_wiederkaeuer_implies_tierart(self) -> None:
+        assert self._matches("art16_003", "Einzelfuttermittel für Wiederkäuer, Schweine, Pferde")
+
     def test_katzenfutter_implies_tierart_single_feed(self) -> None:
         assert self._matches("art16_003", "Katzenfutter Adult"), (
             "'Katzenfutter' must also match art16_003 (Tierart, single_feed)"
@@ -768,6 +796,10 @@ class TestPatternQuality:
     def test_lot_concrete_code_regex_found(self) -> None:
         """'Charge: A2024-09-01' must produce a regex match → found."""
         assert self._regex_match("art15_004", "Charge: A2024-09-01")
+
+    def test_lot_ocr_truncated_chargen_heading_regex_found(self) -> None:
+        """Vision may read 'Chargennummer:' as 'Chargen' with the code on the next line."""
+        assert self._regex_match("art15_004", "Chargen\n01102000040327")
 
     def test_lot_lot_number_regex_found(self) -> None:
         assert self._regex_match("art15_004", "LOT 20240901A")
@@ -999,6 +1031,56 @@ class TestRealWorldPackagingPatterns:
             "Substring 'lot' inside 'Pilotversuch' must not keyword-match art15_004"
         )
         assert not self._regex_match("art15_004", text)
+
+    # ------------------------------------------------------------------
+    # Case 5 — Galopp Broncholyx combined LOT+MHD imprint redirect
+    # "Los Nr. und MHD Ende: siehe Aufdruck"
+    # Both LOT and MHD are declared via redirect to the imprint.
+    # Expected: keyword match for BOTH rules (probablyFound);
+    #           NO regex match (no concrete code or date present).
+    # ------------------------------------------------------------------
+
+    def test_case5_galopp_lot_redirect_keyword_match(self) -> None:
+        """'Los Nr. und MHD Ende' keyword must match art15_004 (LOT rule)."""
+        text = "Los Nr. und MHD Ende: siehe Aufdruck"
+        assert self._keyword_match("art15_004", text), (
+            "'Los Nr. und MHD Ende' must keyword-match art15_004"
+        )
+
+    def test_case5_galopp_lot_redirect_no_regex(self) -> None:
+        """No concrete lot code present → no regex match for art15_004."""
+        text = "Los Nr. und MHD Ende: siehe Aufdruck"
+        assert not self._regex_match("art15_004", text), (
+            "Combined redirect phrase without code must NOT regex-match art15_004"
+        )
+
+    def test_case5_galopp_mhd_redirect_keyword_match(self) -> None:
+        """'Los Nr. und MHD Ende' keyword must match the MHD rule (probablyFound)."""
+        text = "Los Nr. und MHD Ende: siehe Aufdruck"
+        assert self._keyword_match(self._MHD_RULE, text), (
+            "'Los Nr. und MHD Ende' must keyword-match the MHD rule"
+        )
+
+    def test_case5_galopp_mhd_redirect_no_regex(self) -> None:
+        """No concrete date present → no regex match for MHD rule."""
+        text = "Los Nr. und MHD Ende: siehe Aufdruck"
+        assert not self._regex_match(self._MHD_RULE, text), (
+            "Combined redirect phrase without date must NOT regex-match MHD rule"
+        )
+
+    def test_case5_en_lot_redirect_keyword_match(self) -> None:
+        """'Lot no. and expiry date' keyword must match art15_004 (LOT rule, EN)."""
+        text = "Lot no. and expiry date: see imprint"
+        assert self._keyword_match("art15_004", text), (
+            "'Lot no. and expiry date' must keyword-match art15_004"
+        )
+
+    def test_case5_en_mhd_redirect_keyword_match(self) -> None:
+        """'Lot no. and expiry date' keyword must match the MHD rule (EN, probablyFound)."""
+        text = "Lot no. and expiry date: see imprint"
+        assert self._keyword_match(self._MHD_RULE, text), (
+            "'Lot no. and expiry date' must keyword-match the MHD rule"
+        )
 
     def test_fp_lot_colon_still_matches(self) -> None:
         """'LOT:' (with colon) must still keyword-match art15_004."""

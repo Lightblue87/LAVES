@@ -122,7 +122,9 @@ struct LabelingResultView: View {
             } header: {
                 Text("Erkannte Zusatzstoffangaben")
             } footer: {
-                Text("Automatische Erkennung – kein Ersatz für eine amtliche Kontrolle.")
+                let hasNormalized = declarations.contains { $0.amount?.isBareUnit == true }
+                Text("Automatische Erkennung – kein Ersatz für eine amtliche Kontrolle."
+                     + (hasNormalized ? " Mengenangaben ohne /kg-Suffix entsprechen der Deklaration je kg gemäß VO 767/2009." : ""))
                     .font(.caption2)
             }
         }

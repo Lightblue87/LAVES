@@ -365,6 +365,10 @@ struct AdditiveScanResultView: View {
         scanService.matchAdditives(in: entry.ocrText, additives: store.additives)
     }
 
+    private var declarations: [AdditiveDeclaration] {
+        AdditiveDeclarationParser.parse(text: entry.ocrText, additives: store.additives)
+    }
+
     var body: some View {
         List {
             Section("Bild") {
@@ -388,24 +392,46 @@ struct AdditiveScanResultView: View {
             }
 
             Section("Gefundene Zusatzstoffe") {
-                if matches.isEmpty {
+                if declarations.isEmpty && matches.isEmpty {
                     Text("Keine E-Nummern oder Stoffnamen erkannt.")
                         .foregroundStyle(.secondary)
-                } else {
-                    ForEach(matches) { match in
-                        Button {
-                            selectedMatch = match
-                        } label: {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text(match.additive.displayTitle)
-                                    .font(.headline)
-                                    .foregroundStyle(.primary)
-                                Text("Erkannt: \(match.matchedText)")
-                                    .foregroundStyle(.secondary)
-                                Text("Tierarten: \(match.additive.normalizedSpecies)")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                }
+                // Structured declarations (with amounts) — highest quality
+                ForEach(declarations) { decl in
+                    HStack(spacing: 10) {
+                        Image(systemName: decl.confidence.icon)
+                            .foregroundStyle(declarationColor(decl.confidence))
+                            .frame(width: 20)
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Text(decl.substanceName).font(.subheadline)
+                                if let amount = decl.amount {
+                                    Text("–").foregroundStyle(.secondary)
+                                    Text(amount.displayString).font(.subheadline)
+                                }
                             }
+                            if let matched = decl.matchedAdditive, !matched.eNumber.isEmpty {
+                                Text(matched.eNumber).font(.caption2).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+                // Unstructured matches (E-number found but no amount structure)
+                let declaredNames = Set(declarations.map { $0.substanceName.lowercased() })
+                let unstructuredMatches = matches.filter {
+                    !declaredNames.contains($0.additive.name.lowercased())
+                    && !declaredNames.contains($0.matchedText.lowercased())
+                }
+                ForEach(unstructuredMatches) { match in
+                    Button {
+                        selectedMatch = match
+                    } label: {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(match.additive.displayTitle).font(.headline).foregroundStyle(.primary)
+                            Text("Erkannt: \(match.matchedText)").foregroundStyle(.secondary)
+                            Text("Tierarten: \(match.additive.normalizedSpecies)")
+                                .font(.caption).foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -421,6 +447,15 @@ struct AdditiveScanResultView: View {
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $selectedMatch) { match in
             AdditiveDetailSheet(additive: match.additive)
+        }
+    }
+
+    private func declarationColor(_ confidence: AdditiveDeclarationConfidence) -> Color {
+        switch confidence {
+        case .exactMatch:    return .green
+        case .exactNoAmount: return .teal
+        case .fuzzyMatch:    return .orange
+        case .noDBMatch:     return .secondary
         }
     }
 }
@@ -475,6 +510,7 @@ private struct AdditiveDetailSheet: View {
                     ResultSection(result: result)
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle(additive.displayTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

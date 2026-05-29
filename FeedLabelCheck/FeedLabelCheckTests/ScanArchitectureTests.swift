@@ -57,7 +57,21 @@ final class ScanArchitectureTests: XCTestCase {
                     "Ergaenzungsfutermittel",
                     "Ergänzungsfuttermitel",
                     "Ergaenzungsfuttermitel",
-                    "Ergaenzungsfuttermittel"
+                    "Ergaenzungsfuttermittel",
+                    "Raufutterergänzung",
+                    "supplementary feed",
+                    "supplementary feed for",
+                    "aanvullend diervoeder"
+                ]
+            ),
+            LabelingFeedType(
+                id: "mineral_feed",
+                nameDe: "Mineralfuttermittel",
+                descriptionDe: nil,
+                keywordsDe: [
+                    "Mineralfuttermittel",
+                    "Mineral-Futtermittel",
+                    "Mineralfutter"
                 ]
             )
         ]
@@ -208,6 +222,104 @@ final class ScanArchitectureTests: XCTestCase {
         XCTAssertTrue(result.detectedSpeciesHints.contains("Katze"))
         XCTAssertFalse(result.detectedSpeciesHints.contains("Geflügel"))
         XCTAssertFalse(result.detectedSpeciesHints.contains("Schaf"))
+    }
+
+    // MARK: - Real label OCR snippets added 2026-05-26
+
+    func testPavoWeightLiftSnippetDetectsHorseAndComplementaryFeedFromMultilingualText() {
+        let text = """
+        Pavo WeightLift ist eine Raufutterergänzung.
+        Aanvullend diervoeder voor paarden / Ergänzungsfutter für Pferde /
+        Supplementary feed for horses. Analytische Bestandteile.
+        """
+
+        let result = ScanAnalysisService.analyze(mergedText: text, imageItems: nil, feedTypes: feedTypes)
+
+        XCTAssertEqual(result.detectedFeedTypeId, "complementary_feed")
+        XCTAssertTrue(result.detectedSpeciesHints.contains("Pferd"))
+        XCTAssertTrue(result.labelingAreas.hasAnalyticalConstituents)
+    }
+
+    func testBrottrunkSnippetDetectsSingleFeedAndMultipleTargetSpecies() {
+        let text = """
+        Kanne Brottrunk für Tiere.
+        Einzelfuttermittel für Wiederkäuer, Schweine, Pferde, Geflügel und andere Tiere.
+        Mindestens haltbar bis: 20.10.2027 L.25293. Inhalt 5 kg.
+        """
+
+        let singleFeedTypes = feedTypes + [
+            LabelingFeedType(
+                id: "single_feed",
+                nameDe: "Einzelfuttermittel",
+                descriptionDe: nil,
+                keywordsDe: ["Einzelfuttermittel"]
+            )
+        ]
+        let result = ScanAnalysisService.analyze(mergedText: text, imageItems: nil, feedTypes: singleFeedTypes)
+
+        XCTAssertEqual(result.detectedFeedTypeId, "single_feed")
+        XCTAssertTrue(result.detectedSpeciesHints.contains("Rind"))
+        XCTAssertTrue(result.detectedSpeciesHints.contains("Schwein"))
+        XCTAssertTrue(result.detectedSpeciesHints.contains("Pferd"))
+        XCTAssertTrue(result.detectedSpeciesHints.contains("Geflügel"))
+        XCTAssertTrue(result.labelingAreas.hasBestBefore)
+        XCTAssertTrue(result.labelingAreas.hasLotNumber)
+        XCTAssertTrue(result.labelingAreas.hasNetQuantity)
+    }
+
+    func testAgrobsSnippetDetectsAdditiveSectionWithMcgAndHorse() {
+        let text = """
+        AGROBS Seniormineral Ergänzungsfuttermittel für Pferde.
+        Zusatzstoffe je kg: 100.000 I.E. Vitamin A, 15.000 mcg Biotin.
+        Charge: 120300. MHD: 03/2027. Inhalt: 3 kg.
+        """
+
+        let result = ScanAnalysisService.analyze(mergedText: text, imageItems: nil, feedTypes: feedTypes)
+
+        XCTAssertEqual(result.detectedFeedTypeId, "complementary_feed")
+        XCTAssertTrue(result.detectedSpeciesHints.contains("Pferd"))
+        XCTAssertTrue(result.additiveHints.hasStructuredDeclarations)
+        XCTAssertTrue(result.labelingAreas.hasAdditives)
+    }
+
+    func testAlpengruenMashKeepsComplementaryFeedDespiteMineralRecommendation() {
+        let text = """
+        AlpenGrün Mash
+        Ergänzungsfuttermittel für Pferde nach GMP+ FSA gesichert
+        Zusammensetzung Wiesengräser und -kräuter, Leinkuchen, Apfeltrester.
+        Analytische Bestandteile Rohprotein 13,0 %, Rohfett 4,1 %, Rohfaser 20,3 %.
+        Zur Mineralstoffversorgung empfehlen wir ein zu Ihrem Pferd und seinem Bedarf
+        passendes AGROBS Mineralfutter. Chargennummer: 01102000040327.
+        Mindestens haltbar bis: 04.09.2026. 5kg
+        """
+
+        let result = ScanAnalysisService.analyze(mergedText: text, imageItems: nil, feedTypes: feedTypes)
+
+        XCTAssertEqual(result.detectedFeedTypeId, "complementary_feed")
+        XCTAssertTrue(result.detectedSpeciesHints.contains("Pferd"))
+        XCTAssertTrue(result.labelingAreas.hasComposition)
+        XCTAssertTrue(result.labelingAreas.hasAnalyticalConstituents)
+        XCTAssertTrue(result.labelingAreas.hasLotNumber)
+        XCTAssertTrue(result.labelingAreas.hasBestBefore)
+        XCTAssertTrue(result.labelingAreas.hasNetQuantity)
+    }
+
+    func testAlpengruenMashDetectsTruncatedChargenHeadingAsLotNumber() {
+        let text = """
+        AlpenGrün Mash
+        Ergänzungsfuttermittel für Pferde
+        Chargen
+        01102000040327
+        Mindestens haltbar bis:
+        04.09.2026
+        5kg
+        """
+
+        let result = ScanAnalysisService.analyze(mergedText: text, imageItems: nil, feedTypes: feedTypes)
+
+        XCTAssertTrue(result.labelingAreas.hasLotNumber)
+        XCTAssertTrue(result.labelingAreas.hasBestBefore)
+        XCTAssertTrue(result.labelingAreas.hasNetQuantity)
     }
 
     // MARK: - Image coverage

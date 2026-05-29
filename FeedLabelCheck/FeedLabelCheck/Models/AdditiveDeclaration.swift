@@ -45,12 +45,32 @@ struct ParsedAdditiveAmount {
     let unit: String
     let rawText: String
 
-    /// Human-readable representation, e.g. "1000 mg/kg" or "15.5 mg/kg".
-    var displayString: String {
-        if value == value.rounded(.towardZero) && value < 1_000_000 {
-            return "\(Int(value)) \(unit)"
+    /// True when the raw unit is a bare (non-per-kg) unit.
+    /// Per VO (EG) Nr. 767/2009 Art. 17, all additive declarations on labels
+    /// are understood as per kg unless a different basis is explicitly stated.
+    var isBareUnit: Bool {
+        ["mg", "g", "ie", "iu", "µg"].contains(unit.lowercased())
+    }
+
+    /// Unit normalized to per-kg form.
+    var normalizedUnit: String {
+        switch unit.lowercased() {
+        case "mg": return "mg/kg"
+        case "g":  return "g/kg"
+        case "ie": return "IE/kg"
+        case "iu": return "IU/kg"
+        case "µg": return "µg/kg"
+        default:   return unit  // mg/kg, g/kg, %, mg/l etc. unchanged
         }
-        return String(format: "%.2f", value) + " \(unit)"
+    }
+
+    /// Human-readable representation with per-kg normalization applied.
+    var displayString: String {
+        let u = normalizedUnit
+        if value == value.rounded(.towardZero) && value < 1_000_000 {
+            return "\(Int(value)) \(u)"
+        }
+        return String(format: "%.2f", value) + " \(u)"
     }
 }
 

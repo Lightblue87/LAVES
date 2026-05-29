@@ -40,6 +40,7 @@ struct LabelingCheckView: View {
                 feedMaterialCatalogSection
                 labelingStatusBanner
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Kennzeichnung")
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {

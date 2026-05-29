@@ -13,7 +13,7 @@ final class LabelingRuleStore: ObservableObject {
     @Published private(set) var isUpdating = false
     @Published private(set) var updateProgress: Double?
     @Published private(set) var updateDetail: String?
-    @Published private(set) var updateAvailable = false
+    @Published var updateAvailable = false
 
     private let repository: LabelingRuleRepository = SQLiteLabelingRuleRepository()
     private let downloader = LabelingDownloadService()
@@ -47,14 +47,24 @@ final class LabelingRuleStore: ObservableObject {
         }
 
         do {
-            feedTypes = try repository.loadFeedTypes(from: url)
-            feedMaterials = try repository.loadFeedMaterials(from: url)
-            dlgFeedMaterials = try repository.loadDlgFeedMaterials(from: url)
-            additiveParserConfig = try? repository.loadAdditiveParserConfig(from: url)
-            dbInfo = try repository.loadDatabaseInfo(from: url)
+            // Run all synchronous SQLite reads off the main thread to avoid watchdog kill on launch.
+            let result = try await Task.detached(priority: .userInitiated) {
+                let repo = SQLiteLabelingRuleRepository()
+                return try (
+                    feedTypes:           repo.loadFeedTypes(from: url),
+                    feedMaterials:       repo.loadFeedMaterials(from: url),
+                    dlgFeedMaterials:    repo.loadDlgFeedMaterials(from: url),
+                    additiveParserConfig: try? repo.loadAdditiveParserConfig(from: url),
+                    dbInfo:              repo.loadDatabaseInfo(from: url)
+                )
+            }.value
+            feedTypes = result.feedTypes
+            feedMaterials = result.feedMaterials
+            dlgFeedMaterials = result.dlgFeedMaterials
+            additiveParserConfig = result.additiveParserConfig
+            dbInfo = result.dbInfo
             loadError = nil
             isLoaded = true
-            Task { await checkForUpdates() }
         } catch {
             loadError = "Kennzeichnungsregeln konnten nicht geladen werden: \(error.localizedDescription)"
         }
@@ -137,6 +147,31 @@ final class LabelingRuleStore: ObservableObject {
         } catch {
             loadError = "Aktualisierung fehlgeschlagen: \(error.localizedDescription)"
         }
+    }
+
+    // MARK: - Coordinator support
+
+    func needsUpdate(entry: LabelingManifestEntry) -> Bool {
+        defaults.string(forKey: shaKey) != entry.sha256
+            || !FileManager.default.fileExists(atPath: localDatabaseURL.path)
+    }
+
+    func installDatabase(from url: URL, entry: LabelingManifestEntry) async throws {
+        let dir = localDatabaseURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        if FileManager.default.fileExists(atPath: localDatabaseURL.path) {
+            try FileManager.default.removeItem(at: localDatabaseURL)
+        }
+        try FileManager.default.moveItem(at: url, to: localDatabaseURL)
+        feedTypes = try repository.loadFeedTypes(from: localDatabaseURL)
+        feedMaterials = try repository.loadFeedMaterials(from: localDatabaseURL)
+        dlgFeedMaterials = try repository.loadDlgFeedMaterials(from: localDatabaseURL)
+        additiveParserConfig = try? repository.loadAdditiveParserConfig(from: localDatabaseURL)
+        dbInfo = try repository.loadDatabaseInfo(from: localDatabaseURL)
+        defaults.set(entry.sha256, forKey: shaKey)
+        updateAvailable = false
+        isLoaded = true
+        loadError = nil
     }
 
     private func fileSHA256(_ url: URL) throws -> String {

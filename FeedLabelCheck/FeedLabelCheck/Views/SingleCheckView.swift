@@ -136,6 +136,7 @@ struct SingleCheckView: View {
 
                 DataStatusBanner(status: store.dataStatusBrief)
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Zusatzstoffe")
             .onAppear {
                 applyScanContextIfNeeded()

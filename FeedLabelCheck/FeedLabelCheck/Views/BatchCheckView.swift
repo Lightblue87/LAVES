@@ -96,6 +96,7 @@ struct BatchCheckView: View {
 
                 DataStatusBanner(status: store.dataStatusBrief)
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Zusatzstoffprüfung")
         }
     }
@@ -150,7 +151,7 @@ struct BatchCheckView: View {
                 state: .nichtBewertbar,
                 lines: [
                     matches.isEmpty ? "Kein passender Datensatz gefunden." : "Mehrere passende Datensätze gefunden.",
-                    "Masse: \(mass.formatted(.number.precision(.fractionLength(0...3)))) kg",
+                    "Masse: \(formatMass(mass))",
                     "Konzentration: \(concentration.formatted(.number.precision(.fractionLength(0...3)))) mg/kg"
                 ]
             )
@@ -162,7 +163,7 @@ struct BatchCheckView: View {
             state: evaluation.state,
             lines: [
                 "Anteil: \(pct.formatted(.number.precision(.fractionLength(0...3)))) %",
-                "Masse: \(mass.formatted(.number.precision(.fractionLength(0...3)))) kg",
+                "Masse: \(formatMass(mass))",
                 "Konzentration: \(concentration.formatted(.number.precision(.fractionLength(0...3)))) mg/kg"
             ] + evaluation.lines
         )
@@ -170,5 +171,21 @@ struct BatchCheckView: View {
 
     private func parse(_ text: String) -> Double? {
         Double(text.replacingOccurrences(of: ",", with: "."))
+    }
+
+    /// Formats a mass value with automatic unit selection so small values are never shown as "0".
+    /// ≥ 1 kg → kg (3 decimals) · 0.001–1 kg → g (3 decimals) · < 0.001 kg → mg (1-3 decimals)
+    private func formatMass(_ kg: Double) -> String {
+        let abs = Swift.abs(kg)
+        if abs == 0 { return "0 kg" }
+        if abs >= 1 {
+            return "\(kg.formatted(.number.precision(.fractionLength(0...3)))) kg"
+        } else if abs >= 0.001 {
+            let g = kg * 1_000
+            return "\(g.formatted(.number.precision(.fractionLength(0...3)))) g"
+        } else {
+            let mg = kg * 1_000_000
+            return "\(mg.formatted(.number.precision(.fractionLength(0...3)))) mg"
+        }
     }
 }

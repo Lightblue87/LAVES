@@ -62,7 +62,7 @@ struct IngredientScanService {
             }
             request.recognitionLevel = .accurate
             request.usesLanguageCorrection = true
-            request.recognitionLanguages = ["de-DE", "en-US"]
+            request.recognitionLanguages = ["de-DE", "en-US", "fr-FR", "it-IT", "nl-NL"]
 
             let handler = VNImageRequestHandler(cgImage: cgImage, orientation: image.cgImagePropertyOrientation)
             do {
@@ -141,10 +141,10 @@ struct IngredientScanService {
             DetectedAnimal(label: "Katze", tokens: ["katze", "katzen", "kitten", "kater", "cat", "cats", "feline"], requiresFeedContext: false),
             DetectedAnimal(label: "Geflügel", tokens: ["gefluegel", "geflugel", "huhn", "huehner", "huhner", "truthuhn", "truthuehner", "truthuhner", "pute", "puten", "ente", "enten", "gans", "gaense", "ganse", "chicken", "poultry", "turkey", "duck", "goose"], requiresFeedContext: true),
             DetectedAnimal(label: "Schwein", tokens: ["schwein", "schweine", "ferkel", "sau", "sauen", "pig", "pigs", "piglet", "swine"], requiresFeedContext: true),
-            DetectedAnimal(label: "Rind", tokens: ["rind", "rinder", "kalb", "kaelber", "kalber", "kuh", "kuehe", "kuhe", "cattle", "cow", "calf", "bovine"], requiresFeedContext: true),
+            DetectedAnimal(label: "Rind", tokens: ["rind", "rinder", "kalb", "kaelber", "kalber", "kuh", "kuehe", "kuhe", "wiederkaeuer", "wiederkauer", "cattle", "cow", "calf", "bovine", "ruminant", "ruminants"], requiresFeedContext: true),
             DetectedAnimal(label: "Schaf", tokens: ["schaf", "schafe", "lamm", "laemmer", "lammer", "sheep", "lamb"], requiresFeedContext: true),
             DetectedAnimal(label: "Ziege", tokens: ["ziege", "ziegen", "goat", "goats"], requiresFeedContext: true),
-            DetectedAnimal(label: "Pferd", tokens: ["pferd", "pferde", "fohlen", "horse", "horses", "foal"], requiresFeedContext: false),
+            DetectedAnimal(label: "Pferd", tokens: ["pferd", "pferde", "fohlen", "horse", "horses", "foal", "paard", "paarden", "cheval", "chevaux", "cavallo", "cavalli", "cavalo", "cavalos", "caballo", "caballos", "koni", "hast", "heste"], requiresFeedContext: false),
             DetectedAnimal(label: "Fisch", tokens: ["fisch", "fische", "lachs", "forelle", "karpfen", "fish", "salmon", "trout", "carp"], requiresFeedContext: true),
             DetectedAnimal(label: "Kaninchen", tokens: ["kaninchen", "zwergkaninchen", "rabbit", "rabbits"], requiresFeedContext: false),
             DetectedAnimal(label: "Meerschweinchen", tokens: ["meerschweinchen", "guinea pig", "guinea pigs", "cavy", "cavies"], requiresFeedContext: false),
@@ -154,6 +154,7 @@ struct IngredientScanService {
 
     private func containsFeedTarget(_ token: String, in text: String) -> Bool {
         let patterns = [
+            #"(?:fuer|fur|für|for)\s+[a-z0-9\s,/-]{0,80}\b\#(token)\b"#,
             #"fuer\s+\w{0,20}\s*\#(token)\b"#,
             #"fur\s+\w{0,20}\s*\#(token)\b"#,
             #"für\s+\w{0,20}\s*\#(token)\b"#,

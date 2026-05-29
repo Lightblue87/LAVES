@@ -869,4 +869,251 @@ final class AdditiveDeclarationParserTests: XCTestCase {
         XCTAssertFalse(declarations.isEmpty)
         XCTAssertEqual(declarations.first?.amount?.unit, "mg/kg")
     }
+
+    // E-number suppression: when a named entry matches an E-number in the DB,
+    // the bare E-number entry must be dropped to avoid duplicates.
+    func testENumberSuppressedWhenNameFoundInDB() {
+        // Build a minimal mock DB: Taurin = E999 (fictitious E-number for testing)
+        let mockAdditive = Additive(
+            eNumber: "E999",
+            name: "Taurin",
+            species: "Alle Tierarten",
+            maxAgeDays: nil,
+            minMgKg: nil,
+            maxMgKg: nil,
+            unit: nil,
+            regulation: nil,
+            sourceFile: nil,
+            sourcePage: nil,
+            animalCategory: nil
+        )
+        // Label declares both the name and the E-number
+        let text = "Zusatzstoffe: Taurin 570 mg/kg, E 999 570 mg/kg"
+        let declarations = AdditiveDeclarationParser.parse(text: text, additives: [mockAdditive])
+
+        // Only "Taurin" should appear; "E999" must be suppressed
+        XCTAssertEqual(declarations.count, 1,
+                       "E-number entry must be suppressed when the same substance was found by name")
+        XCTAssertEqual(declarations.first?.substanceName, "Taurin")
+    }
+
+    // E-number must be kept when no named entry exists for it
+    func testENumberKeptWhenNoNameFound() {
+        // No DB → no suppression possible
+        let text = "Zusatzstoffe: E 306 200 mg/kg"
+        let declarations = AdditiveDeclarationParser.parse(text: text, additives: [])
+        XCTAssertFalse(declarations.isEmpty, "E-number entry must be kept when no name is found")
+        XCTAssertTrue(AdditiveDeclarationParser.looksLikeENumber("E306"))
+        XCTAssertTrue(AdditiveDeclarationParser.looksLikeENumber("E 300"))
+        XCTAssertFalse(AdditiveDeclarationParser.looksLikeENumber("Taurin"))
+    }
+
+    // New EU 1831/2003 kennnummer format detection
+    func testLooksLikeKennnummer() {
+        XCTAssertTrue(AdditiveDeclarationParser.looksLikeKennnummer("3a300"),   "3a300 → kennnummer")
+        XCTAssertTrue(AdditiveDeclarationParser.looksLikeKennnummer("1m558"),   "1m558 → kennnummer")
+        XCTAssertTrue(AdditiveDeclarationParser.looksLikeKennnummer("2b620i"),  "2b620i → trailing letter")
+        XCTAssertTrue(AdditiveDeclarationParser.looksLikeKennnummer("3c322IV"), "3c322IV → Roman numeral suffix")
+        XCTAssertTrue(AdditiveDeclarationParser.looksLikeKennnummer("3c305ii"), "3c305ii → two trailing letters")
+        XCTAssertFalse(AdditiveDeclarationParser.looksLikeKennnummer("E300"),   "E300 → old E-number")
+        XCTAssertFalse(AdditiveDeclarationParser.looksLikeKennnummer("E 306"),  "E 306 → old E-number")
+        XCTAssertFalse(AdditiveDeclarationParser.looksLikeKennnummer("Taurin"), "Taurin → name")
+        XCTAssertFalse(AdditiveDeclarationParser.looksLikeKennnummer("S01"),    "S01 → starts with letter")
+        XCTAssertFalse(AdditiveDeclarationParser.looksLikeKennnummer("12000"),  "12000 → plain number")
+    }
+
+    // New kennnummer is extracted from label text
+    func testKennnummerExtractedFromLabelText() {
+        let text = "Zusatzstoffe: 3a300 200 mg/kg, 1m558 5000 mg/kg"
+        let declarations = AdditiveDeclarationParser.parse(text: text, additives: [])
+        XCTAssertEqual(declarations.count, 2, "Both kennnummern must be extracted")
+        let names = declarations.map(\.substanceName)
+        XCTAssertTrue(names.contains("3a300") || names.contains("3A300"),
+                      "3a300 must appear in declarations")
+        XCTAssertTrue(names.contains("1m558") || names.contains("1M558"),
+                      "1m558 must appear in declarations")
+    }
+
+    // Kennnummer is suppressed when the named substance was found and DB provides the link
+    func testKennnummerSuppressedWhenNameFoundInDB() {
+        let mockAdditive = Additive(
+            eNumber: "3a300",
+            name: "Ascorbinsäure",
+            species: "Alle Tierarten",
+            maxAgeDays: nil, minMgKg: nil, maxMgKg: nil, unit: nil,
+            regulation: nil, sourceFile: nil, sourcePage: nil, animalCategory: nil
+        )
+        let text = "Zusatzstoffe: Ascorbinsäure 200 mg/kg, 3a300 200 mg/kg"
+        let declarations = AdditiveDeclarationParser.parse(text: text, additives: [mockAdditive])
+        XCTAssertEqual(declarations.count, 1,
+                       "Kennnummer must be suppressed when name found via DB")
+        XCTAssertEqual(declarations.first?.substanceName, "Ascorbinsäure")
+    }
+
+    // DB entry with old E-style kennnummer (e.g. "E 310*") — label shows "E 310" → suppress
+    func testOldEStyleKennnummerSuppressedWhenNameFound() {
+        let mockAdditive = Additive(
+            eNumber: "E 310*",
+            name: "Propylgallat",
+            species: "Alle Tierarten",
+            maxAgeDays: nil, minMgKg: nil, maxMgKg: nil, unit: nil,
+            regulation: nil, sourceFile: nil, sourcePage: nil, animalCategory: nil
+        )
+        let text = "Zusatzstoffe: Propylgallat 100 mg/kg, E 310 100 mg/kg"
+        let declarations = AdditiveDeclarationParser.parse(text: text, additives: [mockAdditive])
+        // "Propylgallat" → DB kennnummer "E 310*" → normalised "E310"
+        // "E 310" on label → normalised "E310" → suppressed
+        XCTAssertEqual(declarations.count, 1,
+                       "Old E-style kennnummer must be suppressed when name found via DB")
+        XCTAssertEqual(declarations.first?.substanceName, "Propylgallat")
+    }
+
+    func testAmountFirstInternationalUnitVariantsParsed() {
+        let text = """
+        Zusatzstoffe je kg:
+        15.000I.E. Vitamin A; 1.500 l.E. Vitamin D3; 540æg Biotin;
+        15.000 mcg Biotin; 20mg Kupfer als Kupfer-(II)-sulfat.
+        """
+
+        let declarations = AdditiveDeclarationParser.parse(text: text, additives: [])
+        let names = Set(declarations.map(\.substanceName))
+
+        XCTAssertTrue(names.contains("Vitamin A"))
+        XCTAssertTrue(names.contains("Vitamin D3"))
+        XCTAssertTrue(names.contains("Biotin"))
+        XCTAssertTrue(names.contains("Kupfer"))
+        XCTAssertTrue(declarations.contains { $0.amount?.unit.localizedCaseInsensitiveContains("I.E") == true })
+        XCTAssertTrue(declarations.contains { $0.amount?.unit == "æg" })
+        XCTAssertTrue(declarations.contains { $0.amount?.unit == "mcg" })
+    }
+
+    func testAdditiveNamesStartingWithAnalyticalMineralWordsAreNotExcluded() {
+        let text = "Zusatzstoffe je kg: Calcium-D-Pantothenat 1.000 mg, Natriumselenit 10 mg"
+
+        let declarations = AdditiveDeclarationParser.parse(text: text, additives: [])
+        let names = Set(declarations.map(\.substanceName))
+
+        XCTAssertTrue(names.contains("Calcium-D-Pantothenat"))
+        XCTAssertTrue(names.contains("Natriumselenit"))
+    }
+
+    // Cross-format dedup: DB has BOTH new kennnummer AND old E-style for the same substance.
+    // Label shows the name + old E-number, but DB entry for the name uses the new kennnummer.
+    // relatedKennnummern() must bridge the gap via numeric core matching.
+    func testCrossFormatDedup_NewKennnummerInDB_OldENumberOnLabel() {
+        // DB: two entries for the same substance (Bentonit variants)
+        let bentonitNew = Additive(
+            eNumber: "1m558",         // new kennnummer
+            name: "Bentonit",
+            species: "Rinder", maxAgeDays: nil, minMgKg: nil, maxMgKg: 20000, unit: nil,
+            regulation: nil, sourceFile: nil, sourcePage: nil, animalCategory: nil
+        )
+        let bentonitOld = Additive(
+            eNumber: "E 558*",        // old E-style kennnummer, same numeric core "558"
+            name: "Bentonit-Montmorillonit",
+            species: "Schweine", maxAgeDays: nil, minMgKg: nil, maxMgKg: 20000, unit: nil,
+            regulation: nil, sourceFile: nil, sourcePage: nil, animalCategory: nil
+        )
+        let db = [bentonitNew, bentonitOld]
+
+        // Label: name + old E-number (most common cross-format case)
+        let text = "Zusatzstoffe: Bentonit 5000 mg/kg, E 558 5000 mg/kg"
+        let declarations = AdditiveDeclarationParser.parse(text: text, additives: db)
+
+        // "Bentonit" → DB match "1m558" (core "558")
+        // relatedKennnummern("1m558", in: db) → also finds "E 558*" (core "558") → adds "E558"
+        // "E 558" on label → normalised "E558" → in coveredIdentifiers → suppressed
+        XCTAssertEqual(declarations.count, 1,
+                       "Old E-number must be suppressed via numeric-core cross-reference")
+        XCTAssertEqual(declarations.first?.substanceName, "Bentonit")
+    }
+
+    // Inverse: label has name + new kennnummer; DB entry uses old E-style kennnummer
+    func testCrossFormatDedup_OldENumberInDB_NewKennnummerOnLabel() {
+        let tartrazinOld = Additive(
+            eNumber: "E 102*",        // old-style kennnummer in DB
+            name: "Tartrazin",
+            species: "Alle Tierarten", maxAgeDays: nil, minMgKg: nil, maxMgKg: nil, unit: nil,
+            regulation: nil, sourceFile: nil, sourcePage: nil, animalCategory: nil
+        )
+        let tartrazinNew = Additive(
+            eNumber: "2a102",         // new-style kennnummer in DB, same core "102"
+            name: "Tartrazin",
+            species: "Alle Tierarten", maxAgeDays: nil, minMgKg: nil, maxMgKg: nil, unit: nil,
+            regulation: nil, sourceFile: nil, sourcePage: nil, animalCategory: nil
+        )
+        let db = [tartrazinOld, tartrazinNew]
+
+        // Label: name + new kennnummer (label updated to new system, DB still has old entry too)
+        let text = "Zusatzstoffe: Tartrazin 50 mg/kg, 2a102 50 mg/kg"
+        let declarations = AdditiveDeclarationParser.parse(text: text, additives: db)
+
+        // "Tartrazin" → DB match "E 102*" or "2a102" (both have core "102")
+        // coveredIdentifiers gets "E102" + "2A102" (via relatedKennnummern)
+        // "2a102" on label → looksLikeKennnummer → normalised "2A102" → suppressed
+        XCTAssertEqual(declarations.count, 1,
+                       "New kennnummer must be suppressed when name found and DB has cross-format entry")
+        XCTAssertEqual(declarations.first?.substanceName, "Tartrazin")
+    }
+}
+
+// MARK: - EvaluationService filter tests
+
+final class EvaluationServiceCandidateFilterTests: XCTestCase {
+
+    /// Cholinchlorid (3a890): tierarten = "Alle Tierarten", tierart_kategorie = "Sonstige".
+    /// When the user selects "Schweine" as category, the substance must still appear
+    /// because it is approved for all species — regardless of its DB category tag.
+    func testAllSpeciesSubstanceVisibleUnderSpecificCategory() {
+        let cholinchlorid = Additive(
+            eNumber: "3a890",
+            name: "Cholinchlorid",
+            species: "Alle Tierarten",
+            maxAgeDays: nil, minMgKg: nil, maxMgKg: nil, unit: nil,
+            regulation: nil, sourceFile: nil, sourcePage: nil,
+            animalCategory: "Sonstige"   // DB-Kategorie ≠ "Schweine"
+        )
+
+        // Must appear under "Alle Kategorien"
+        let allCat = EvaluationService.candidates(
+            in: [cholinchlorid], eNumber: "", substance: "",
+            animalCategory: "Alle Kategorien", selectedSpecies: "Alle Tierarten"
+        )
+        XCTAssertFalse(allCat.isEmpty, "Cholinchlorid must appear under 'Alle Kategorien'")
+
+        // Must appear when "Schweine" category is selected (regression guard)
+        let schweineCat = EvaluationService.candidates(
+            in: [cholinchlorid], eNumber: "", substance: "",
+            animalCategory: "Schweine", selectedSpecies: "Alle Tierarten"
+        )
+        XCTAssertFalse(schweineCat.isEmpty,
+                       "Cholinchlorid (Alle Tierarten) must appear when 'Schweine' category is selected")
+
+        // Must appear when "Schweine" is selected as specific species
+        let schweineSpecies = EvaluationService.candidates(
+            in: [cholinchlorid], eNumber: "", substance: "",
+            animalCategory: "Schweine", selectedSpecies: "Schweine"
+        )
+        XCTAssertFalse(schweineSpecies.isEmpty,
+                       "Cholinchlorid (Alle Tierarten) must appear when 'Schweine' species is selected")
+    }
+
+    /// A substance restricted to a specific species must NOT appear under a different category.
+    func testSpecificSpeciesSubstanceHiddenUnderOtherCategory() {
+        let hundOnly = Additive(
+            eNumber: "E001",
+            name: "TeststoffHund",
+            species: "Hunde",
+            maxAgeDays: nil, minMgKg: nil, maxMgKg: nil, unit: nil,
+            regulation: nil, sourceFile: nil, sourcePage: nil,
+            animalCategory: "Heimtiere"
+        )
+
+        let schweineCat = EvaluationService.candidates(
+            in: [hundOnly], eNumber: "", substance: "",
+            animalCategory: "Schweine", selectedSpecies: "Alle Tierarten"
+        )
+        XCTAssertTrue(schweineCat.isEmpty,
+                      "Hunde-only substance must not appear under 'Schweine' category")
+    }
 }

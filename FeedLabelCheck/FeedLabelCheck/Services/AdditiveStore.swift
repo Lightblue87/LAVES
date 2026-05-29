@@ -14,7 +14,7 @@ final class AdditiveStore: ObservableObject {
     @Published private(set) var isUpdating = false
     @Published private(set) var updateProgress: Double?
     @Published private(set) var updateDetail: String?
-    @Published private(set) var updateAvailable = false
+    @Published var updateAvailable = false
 
     private let downloader = DataDownloadService()
     private let sqliteRepository = SQLiteAdditiveRepository()
@@ -54,11 +54,14 @@ final class AdditiveStore: ObservableObject {
         guard additives.isEmpty else { return }
 
         if FileManager.default.fileExists(atPath: localDatabaseURL.path) {
+            let url = localDatabaseURL  // capture value type before leaving MainActor
             do {
-                additives = try sqliteRepository.loadAdditives(from: localDatabaseURL)
+                let loaded = try await Task.detached(priority: .userInitiated) {
+                    try SQLiteAdditiveRepository().loadAdditives(from: url)
+                }.value
+                additives = loaded
                 loadError = nil
                 dataStatus = localDataStatus(prefix: "Lokale SQLite-Datenbank")
-                Task { await checkForUpdates() }
                 return
             } catch {
                 loadError = "Lokale Datenbank konnte nicht gelesen werden: \(error.localizedDescription)"
@@ -71,11 +74,13 @@ final class AdditiveStore: ObservableObject {
         }
 
         do {
-            let data = try Data(contentsOf: url)
-            additives = try JSONDecoder().decode([Additive].self, from: data)
+            let loaded = try await Task.detached(priority: .userInitiated) {
+                let data = try Data(contentsOf: url)
+                return try JSONDecoder().decode([Additive].self, from: data)
+            }.value
+            additives = loaded
             loadError = nil
             dataStatus = "Bundle-Daten geladen (\(additives.count) Datensätze)"
-            Task { await checkForUpdates() }
         } catch {
             loadError = "Daten konnten nicht geladen werden: \(error.localizedDescription)"
         }
@@ -157,6 +162,32 @@ final class AdditiveStore: ObservableObject {
             updateDetail = "Aktualisierung fehlgeschlagen"
         }
     }
+
+    // MARK: - Coordinator support
+
+    func needsUpdate(manifest: DataManifest) -> Bool {
+        defaults.string(forKey: manifestSHAKey) != manifest.files.sqlite.sha256
+            || !FileManager.default.fileExists(atPath: localDatabaseURL.path)
+    }
+
+    func installDatabase(from url: URL, manifest: DataManifest) async throws {
+        try prepareDataDirectory()
+        _ = try sqliteRepository.loadAdditives(from: url)
+        if FileManager.default.fileExists(atPath: localDatabaseURL.path) {
+            try FileManager.default.removeItem(at: localDatabaseURL)
+        }
+        try FileManager.default.moveItem(at: url, to: localDatabaseURL)
+        let loaded = try sqliteRepository.loadAdditives(from: localDatabaseURL)
+        additives = loaded
+        defaults.set(manifest.files.sqlite.sha256, forKey: manifestSHAKey)
+        defaults.set(manifest.generatedAt, forKey: manifestDateKey)
+        loadError = nil
+        let formattedDate = formattedDataDate(manifest.generatedAt)
+        dataStatus = "SQLite aktualisiert (\(manifest.recordCount) Datensätze, Stand \(formattedDate))"
+        updateAvailable = false
+    }
+
+    // MARK: - Private helpers
 
     private var localDatabaseURL: URL {
         dataDirectory.appendingPathComponent("feedlabelcheck.sqlite")

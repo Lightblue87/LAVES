@@ -21,6 +21,9 @@ struct LabelingFeedTypeDetector {
         // legal feed type hits. Generic pet-feed words should not override
         // explicit labels such as "Alleinfuttermittel".
         if candidates.count > 1 && (best.score - candidates[1].score) < 0.25 {
+            if hasDirectLegalMatch(best) && !hasDirectLegalMatch(candidates[1]) {
+                return best
+            }
             return nil
         }
 
@@ -114,10 +117,15 @@ struct LabelingFeedTypeDetector {
             "erganzungsfutter",
             "mineralfuttermittel",
             "mineral-futtermittel",
-            "mineralfutter",
             "milchaustauscher",
             "milch-austauscher"
         ]
+    }
+
+    private func hasDirectLegalMatch(_ result: DetectionResult) -> Bool {
+        result.matchedKeywords.contains { keyword in
+            directLegalTerms.contains(normalize(keyword))
+        }
     }
 
     private func containsPhrase(_ phrase: String, in text: String) -> Bool {

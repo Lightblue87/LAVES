@@ -42,7 +42,8 @@ struct IngredientScanView: View {
             .navigationTitle("Scan")
             .sheet(isPresented: $isAddImagePresented) {
                 AddImageSheet(
-                    defaultType: OCRImageType.suggestedType(forIndex: session.imageCount)
+                    startIndex: session.imageCount,
+                    maxToAdd: MultiImageOCRSession.maxImages - session.imageCount
                 ) { image, type in
                     Task { await session.addImage(image, type: type) }
                 }
@@ -518,19 +519,31 @@ private struct ImageThumbnailCard: View {
 
 private struct AddImageSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var selectedPhoto: PhotosPickerItem?
+    @State private var selectedPhotos: [PhotosPickerItem] = []
     @State private var capturedImage: UIImage?
     @State private var isCameraPresented = false
     @State private var selectedType: OCRImageType
+    @State private var addedInSession = 0
+    @State private var isLoadingPhotos = false
 
-    let defaultType: OCRImageType
+    /// Index of the first image to be added in this session (for type suggestion).
+    let startIndex: Int
+    /// Maximum number of images the user may add in this session.
+    let maxToAdd: Int
     let onAdd: (UIImage, OCRImageType) -> Void
 
-    init(defaultType: OCRImageType, onAdd: @escaping (UIImage, OCRImageType) -> Void) {
-        self.defaultType = defaultType
+    init(startIndex: Int, maxToAdd: Int, onAdd: @escaping (UIImage, OCRImageType) -> Void) {
+        self.startIndex = startIndex
+        self.maxToAdd = maxToAdd
         self.onAdd = onAdd
-        _selectedType = State(initialValue: defaultType)
+        _selectedType = State(initialValue: OCRImageType.suggestedType(forIndex: startIndex))
     }
+
+    private var currentSuggestedType: OCRImageType {
+        OCRImageType.suggestedType(forIndex: startIndex + addedInSession)
+    }
+
+    private var remainingAfterThis: Int { maxToAdd - addedInSession - 1 }
 
     var body: some View {
         NavigationStack {
@@ -552,39 +565,88 @@ private struct AddImageSheet: View {
                     }
                     .disabled(!UIImagePickerController.isSourceTypeAvailable(.camera))
 
-                    PhotosPicker(selection: $selectedPhoto, matching: .images) {
-                        Label("Bild aus Bibliothek", systemImage: "photo.on.rectangle")
+                    PhotosPicker(
+                        selection: $selectedPhotos,
+                        maxSelectionCount: maxToAdd,
+                        matching: .images
+                    ) {
+                        Label(
+                            maxToAdd > 1
+                                ? "Bis zu \(maxToAdd) Bilder auswählen"
+                                : "Bild aus Bibliothek",
+                            systemImage: "photo.on.rectangle.angled"
+                        )
+                    }
+
+                    if isLoadingPhotos {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                            Text("Bilder werden geladen…")
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
 
                 if let img = capturedImage {
-                    Section("Vorschau") {
-                        Image(uiImage: img).resizable().scaledToFit()
-                            .frame(maxHeight: 220)
+                    Section {
+                        Image(uiImage: img)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxHeight: 200)
                             .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                        // Offer "next photo" only when more slots are free
+                        if remainingAfterThis > 0 {
+                            Button {
+                                onAdd(img, selectedType)
+                                addedInSession += 1
+                                selectedType = currentSuggestedType
+                                capturedImage = nil
+                                isCameraPresented = true
+                            } label: {
+                                Label("Hinzufügen + Nächstes Foto", systemImage: "camera.badge.ellipsis")
+                            }
+                            .bold()
+                        }
+
                         Button {
                             onAdd(img, selectedType)
                             dismiss()
                         } label: {
-                            Label("Bild hinzufügen", systemImage: "plus.circle.fill")
+                            Label("Hinzufügen + Fertig", systemImage: "checkmark.circle.fill")
                         }
                         .bold()
+
+                    } header: {
+                        Text("Aufgenommenes Foto")
+                    } footer: {
+                        if remainingAfterThis > 0 {
+                            Text("Noch \(remainingAfterThis) weitere\(remainingAfterThis == 1 ? "s" : "") Bild\(remainingAfterThis == 1 ? "" : "er") möglich.")
+                                .font(.caption2)
+                        }
                     }
                 }
             }
-            .navigationTitle("Bild hinzufügen")
+            .navigationTitle("Bilder hinzufügen")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Abbrechen") { dismiss() }
                 }
             }
-            .onChange(of: selectedPhoto) { _, item in
+            .onChange(of: selectedPhotos) { _, items in
+                guard !items.isEmpty else { return }
+                isLoadingPhotos = true
                 Task {
-                    guard let item,
-                          let data = try? await item.loadTransferable(type: Data.self),
-                          let image = UIImage(data: data) else { return }
-                    capturedImage = image
+                    for item in items {
+                        guard let data = try? await item.loadTransferable(type: Data.self),
+                              let image = UIImage(data: data) else { continue }
+                        onAdd(image, selectedType)
+                    }
+                    await MainActor.run {
+                        isLoadingPhotos = false
+                        dismiss()
+                    }
                 }
             }
             .sheet(isPresented: $isCameraPresented) {
