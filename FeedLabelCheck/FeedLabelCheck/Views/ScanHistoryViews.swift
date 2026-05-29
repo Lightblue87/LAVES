@@ -499,7 +499,6 @@ private struct AdditiveDetailSheet: View {
                 Section("Schnellprüfung") {
                     TextField("Laborwert \(additive.unit ?? "mg/kg")", text: $valueText)
                         .keyboardType(.decimalPad)
-                        .numericKeyboardToolbar()
                     Button("Prüfen") {
                         guard let v = Double(valueText.replacingOccurrences(of: ",", with: ".")) else { return }
                         result = EvaluationService.evaluate(value: v, additive: additive)

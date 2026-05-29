@@ -121,7 +121,6 @@ struct SingleCheckView: View {
                     }
                     TextField("Laborwert (\(selectedUnit))", text: $value)
                         .keyboardType(.decimalPad)
-                        .numericKeyboardToolbar()
                 }
 
                 Section {

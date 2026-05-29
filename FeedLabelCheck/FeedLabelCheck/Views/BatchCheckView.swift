@@ -40,7 +40,6 @@ struct BatchCheckView: View {
                 Section("Partie") {
                     TextField("Partiemenge", text: $batchValue)
                         .keyboardType(.decimalPad)
-                        .numericKeyboardToolbar()
                     Picker("Einheit", selection: $batchUnit) {
                         ForEach(units, id: \.self) { unit in
                             Text(unit).tag(unit)
@@ -82,7 +81,6 @@ struct BatchCheckView: View {
                     }
                     TextField("% der Gesamtpartie", text: $percent)
                         .keyboardType(.decimalPad)
-                        .numericKeyboardToolbar()
                 }
 
                 Section {
