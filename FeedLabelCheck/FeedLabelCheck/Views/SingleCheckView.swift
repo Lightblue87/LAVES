@@ -121,6 +121,7 @@ struct SingleCheckView: View {
                     }
                     TextField("Laborwert (\(selectedUnit))", text: $value)
                         .keyboardType(.decimalPad)
+                        .numericKeyboardToolbar()
                 }
 
                 Section {
@@ -136,6 +137,7 @@ struct SingleCheckView: View {
 
                 DataStatusBanner(status: store.dataStatusBrief)
             }
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("Zusatzstoffe")
             .onAppear {
                 applyScanContextIfNeeded()
