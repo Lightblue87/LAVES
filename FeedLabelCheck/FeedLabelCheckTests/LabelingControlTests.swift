@@ -1056,3 +1056,64 @@ final class AdditiveDeclarationParserTests: XCTestCase {
         XCTAssertEqual(declarations.first?.substanceName, "Tartrazin")
     }
 }
+
+// MARK: - EvaluationService filter tests
+
+final class EvaluationServiceCandidateFilterTests: XCTestCase {
+
+    /// Cholinchlorid (3a890): tierarten = "Alle Tierarten", tierart_kategorie = "Sonstige".
+    /// When the user selects "Schweine" as category, the substance must still appear
+    /// because it is approved for all species — regardless of its DB category tag.
+    func testAllSpeciesSubstanceVisibleUnderSpecificCategory() {
+        let cholinchlorid = Additive(
+            eNumber: "3a890",
+            name: "Cholinchlorid",
+            species: "Alle Tierarten",
+            maxAgeDays: nil, minMgKg: nil, maxMgKg: nil, unit: nil,
+            regulation: nil, sourceFile: nil, sourcePage: nil,
+            animalCategory: "Sonstige"   // DB-Kategorie ≠ "Schweine"
+        )
+
+        // Must appear under "Alle Kategorien"
+        let allCat = EvaluationService.candidates(
+            in: [cholinchlorid], eNumber: "", substance: "",
+            animalCategory: "Alle Kategorien", selectedSpecies: "Alle Tierarten"
+        )
+        XCTAssertFalse(allCat.isEmpty, "Cholinchlorid must appear under 'Alle Kategorien'")
+
+        // Must appear when "Schweine" category is selected (regression guard)
+        let schweineCat = EvaluationService.candidates(
+            in: [cholinchlorid], eNumber: "", substance: "",
+            animalCategory: "Schweine", selectedSpecies: "Alle Tierarten"
+        )
+        XCTAssertFalse(schweineCat.isEmpty,
+                       "Cholinchlorid (Alle Tierarten) must appear when 'Schweine' category is selected")
+
+        // Must appear when "Schweine" is selected as specific species
+        let schweineSpecies = EvaluationService.candidates(
+            in: [cholinchlorid], eNumber: "", substance: "",
+            animalCategory: "Schweine", selectedSpecies: "Schweine"
+        )
+        XCTAssertFalse(schweineSpecies.isEmpty,
+                       "Cholinchlorid (Alle Tierarten) must appear when 'Schweine' species is selected")
+    }
+
+    /// A substance restricted to a specific species must NOT appear under a different category.
+    func testSpecificSpeciesSubstanceHiddenUnderOtherCategory() {
+        let hundOnly = Additive(
+            eNumber: "E001",
+            name: "TeststoffHund",
+            species: "Hunde",
+            maxAgeDays: nil, minMgKg: nil, maxMgKg: nil, unit: nil,
+            regulation: nil, sourceFile: nil, sourcePage: nil,
+            animalCategory: "Heimtiere"
+        )
+
+        let schweineCat = EvaluationService.candidates(
+            in: [hundOnly], eNumber: "", substance: "",
+            animalCategory: "Schweine", selectedSpecies: "Alle Tierarten"
+        )
+        XCTAssertTrue(schweineCat.isEmpty,
+                      "Hunde-only substance must not appear under 'Schweine' category")
+    }
+}

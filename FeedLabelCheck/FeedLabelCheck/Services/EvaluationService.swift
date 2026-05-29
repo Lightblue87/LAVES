@@ -118,7 +118,11 @@ struct EvaluationService {
         return additives.filter { additive in
             let matchesENumber = eQuery.isEmpty || additive.eNumber.lowercased() == eQuery
             let matchesSubstance = sQuery.isEmpty || additive.name.lowercased().contains(sQuery)
-            let matchesCategory = animalCategory == "Alle Kategorien"
+            // A substance approved for all species must appear under every category filter,
+            // regardless of how its animalCategory is classified in the DB (e.g. "Sonstige").
+            let approvesAllSpecies = additive.normalizedSpecies == "Alle Tierarten"
+            let matchesCategory = approvesAllSpecies
+                || animalCategory == "Alle Kategorien"
                 || additive.animalCategory == animalCategory
                 || additive.animalCategory == "Alle Tierarten"
                 || additive.animalCategory == nil
